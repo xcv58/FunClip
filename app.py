@@ -64,7 +64,7 @@ def reset_state():
             del st.session_state[key]
 
 # --- 6. MAIN APP ---
-st.set_page_config(page_title="FunClip Pro", page_icon="✂️")
+st.set_page_config(page_title="FunClip Pro", page_icon="✂️", layout="wide")
 st.title("FunClip Service ✂️")
 
 try:
