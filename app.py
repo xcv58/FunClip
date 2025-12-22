@@ -175,3 +175,7 @@ if uploaded_file is not None:
                 mime="text/plain",
                 type="primary"
             )
+            
+            st.divider()
+            st.subheader("SRT Preview")
+            st.text_area("SRT Content", st.session_state['res_srt'], height=200)
