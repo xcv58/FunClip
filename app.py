@@ -190,12 +190,30 @@ if uploaded_file is not None:
         st.header("🤖 AI Auto Correction")
         
         with st.expander("LLM Settings", expanded=False):
-            api_key_env = os.getenv("OPENAI_API_KEY", "")
+            api_key_env = os.getenv("OPENAI_API_KEY")
             base_url_env = os.getenv("OPENAI_BASE_URL", "")
             
             c1, c2 = st.columns(2)
             with c1:
-                api_key_input = st.text_input("API Key (OpenAI/Compatible)", value=api_key_env, type="password", help="Leave empty to use environment variables")
+                # Do not pre-fill value with env var to avoid leaking it in the UI
+                help_text = "Enter your own key to override the system default."
+                if api_key_env:
+                    help_text += " (System key is currently active)"
+                
+                api_key_input = st.text_input(
+                    "API Key (OpenAI/Compatible)", 
+                    value="", 
+                    type="password", 
+                    help=help_text, 
+                    placeholder="sk-..."
+                )
+                
+                # Visual indicator if system key is available
+                if api_key_env and not api_key_input:
+                    st.caption("✅ System API Key detected")
+                elif not api_key_env and not api_key_input:
+                    st.caption("⚠️ No System API Key found")
+
             with c2:
                 model_input = st.text_input("Model Name", value="gpt-3.5-turbo", help="e.g. gpt-4, gpt-3.5-turbo, claude-3")
             
@@ -203,10 +221,11 @@ if uploaded_file is not None:
 
         if st.button("✨ Run Auto Correction"):
             target_srt = st.session_state['res_srt']
+            # Use user input if provided, otherwise fall back to env (handled by litellm/backend)
             effective_api_key = api_key_input if api_key_input else None
             effective_base_url = base_url_input if base_url_input else None
             
-            # Simple validation: if no env key and no input key, warn
+            # Simple validation
             if not effective_api_key and not api_key_env:
                 st.warning("⚠️ No API Key detected in .env or input field. The request might fail unless your provider doesn't need one.")
 
