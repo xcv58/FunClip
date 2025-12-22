@@ -4,7 +4,11 @@ import sys
 import time
 import threading
 import soundfile as sf
+import streamlit.components.v1 as components
+from dotenv import load_dotenv
 from tempfile import TemporaryDirectory
+
+load_dotenv()
 
 # --- 1. SETUP PATHS ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -16,6 +20,7 @@ if funclip_dir not in sys.path:
 try:
     from funclip.videoclipper import VideoClipper
     from funasr import AutoModel
+    from funclip.llm.srt_corrector import correct_srt_content
 except ImportError as e:
     st.error(f"Error importing modules: {e}")
     st.stop()
@@ -53,7 +58,7 @@ def load_models():
 # --- 5. HELPER: RESET STATE ---
 def reset_state():
     """Clears results if a new file is uploaded."""
-    keys_to_clear = ['res_text', 'res_srt', 'srt_filename', 'processing_done']
+    keys_to_clear = ['res_text', 'res_srt', 'srt_filename', 'processing_done', 'res_srt_corrected']
     for key in keys_to_clear:
         if key in st.session_state:
             del st.session_state[key]
@@ -176,6 +181,98 @@ if uploaded_file is not None:
                 type="primary"
             )
             
+        st.divider()
+        st.subheader("SRT Preview")
+        st.text_area("SRT Content", st.session_state['res_srt'], height=200)
+
+        # --- 7. AI AUTO CORRECTION ---
+        st.divider()
+        st.header("🤖 AI Auto Correction")
+        
+        with st.expander("LLM Settings", expanded=False):
+            api_key_env = os.getenv("OPENAI_API_KEY", "")
+            base_url_env = os.getenv("OPENAI_BASE_URL", "")
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                api_key_input = st.text_input("API Key (OpenAI/Compatible)", value=api_key_env, type="password", help="Leave empty to use environment variables")
+            with c2:
+                model_input = st.text_input("Model Name", value="gpt-3.5-turbo", help="e.g. gpt-4, gpt-3.5-turbo, claude-3")
+            
+            base_url_input = st.text_input("Base URL (Optional)", value=base_url_env, help="e.g. https://api.moonshot.cn/v1")
+
+        if st.button("✨ Run Auto Correction"):
+            target_srt = st.session_state['res_srt']
+            effective_api_key = api_key_input if api_key_input else None
+            effective_base_url = base_url_input if base_url_input else None
+            
+            # Simple validation: if no env key and no input key, warn
+            if not effective_api_key and not api_key_env:
+                st.warning("⚠️ No API Key detected in .env or input field. The request might fail unless your provider doesn't need one.")
+
+            with st.spinner("🤖 AI is correcting subtitles... This may take a moment."):
+                try:
+                    corrected_text = correct_srt_content(
+                        srt_content=target_srt,
+                        api_key=effective_api_key,
+                        base_url=effective_base_url,
+                        model=model_input
+                    )
+                    st.session_state['res_srt_corrected'] = corrected_text
+                    st.success("✅ Correction Complete!")
+                except Exception as e:
+                    st.error(f"❌ Correction failed: {str(e)}")
+
+        # Display Corrected Results & Diff
+        if 'res_srt_corrected' in st.session_state:
             st.divider()
-            st.subheader("SRT Preview")
-            st.text_area("SRT Content", st.session_state['res_srt'], height=200)
+            st.subheader("📝 Correction Results")
+            
+            # 1. Download Buttons (Side by Side)
+            d_col1, d_col2 = st.columns(2)
+            with d_col1:
+                st.download_button(
+                    label="⬇️ Download Original SRT",
+                    data=st.session_state['res_srt'],
+                    file_name=st.session_state['srt_filename'],
+                    mime="text/plain"
+                )
+            with d_col2:
+                corrected_filename = "corrected_" + st.session_state['srt_filename']
+                st.download_button(
+                    label="⬇️ Download Corrected SRT",
+                    data=st.session_state['res_srt_corrected'],
+                    file_name=corrected_filename,
+                    mime="text/plain",
+                    type="primary"
+                )
+
+            # 2. Side-by-Side Text Areas
+            comp_col1, comp_col2 = st.columns(2)
+            with comp_col1:
+                st.info("Original")
+                st.text_area("Original Content", st.session_state['res_srt'], height=400, label_visibility="collapsed")
+            with comp_col2:
+                st.success("Corrected")
+                st.text_area("Corrected Content", st.session_state['res_srt_corrected'], height=400, label_visibility="collapsed")
+
+            # 3. HTML Diff View
+            with st.expander("🔍 Detailed Diff View", expanded=True):
+                import difflib
+                
+                # Generate HTML Diff
+                original_lines = st.session_state['res_srt'].splitlines()
+                corrected_lines = st.session_state['res_srt_corrected'].splitlines()
+                
+                diff = difflib.HtmlDiff().make_file(
+                    original_lines, 
+                    corrected_lines, 
+                    fromdesc='Original', 
+                    todesc='Corrected',
+                    context=True,
+                    numlines=3
+                )
+                
+                # Custom CSS to make it fit nicely in Streamlit
+                # We inject it via html component
+                components.html(diff, height=600, scrolling=True)
