@@ -82,6 +82,14 @@ uploaded_file = st.file_uploader(
 )
 
 if uploaded_file is not None:
+    # --- MEDIA PREVIEW ---
+    # Display audio or video player based on file type
+    file_type = uploaded_file.name.split('.')[-1].lower()
+    if file_type in ['mp4', 'mov', 'avi', 'mkv']:
+        st.video(uploaded_file)
+    else:
+        st.audio(uploaded_file)
+
     status_container = st.container()
     
     # --- PROCESSING BUTTON ---
@@ -166,13 +174,13 @@ if uploaded_file is not None:
         
         with col1:
             st.subheader("Recognized Text")
-            st.text_area("Content", st.session_state['res_text'], height=200)
+            st.text_area("Content", st.session_state['res_text'], height=400)
         
         with col2:
-            st.subheader("Download")
+            st.subheader("SRT Subtitles")
             filename = st.session_state['srt_filename']
-            st.success(f"Generated: **{filename}**")
             
+            # Download button right above the preview
             st.download_button(
                 label=f"⬇️ Download {filename}",
                 data=st.session_state['res_srt'],
@@ -181,9 +189,7 @@ if uploaded_file is not None:
                 type="primary"
             )
             
-        st.divider()
-        st.subheader("SRT Preview")
-        st.text_area("SRT Content", st.session_state['res_srt'], height=200)
+            st.text_area("SRT Content", st.session_state['res_srt'], height=350, label_visibility="collapsed")
 
         # --- 7. AI AUTO CORRECTION ---
         st.divider()
