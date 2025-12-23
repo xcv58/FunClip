@@ -29,7 +29,7 @@ def correct_srt_content(srt_content, api_key=None, base_url=None, model="gpt-4o-
         "2. Correct location names, famous people's names, and specific terminologies/conventions that may have been phonetic misinterpretations (e.g., correcting 'Fun Clip' to 'FunClip' if appropriate context, or correcting city names).\n"
         "3. Fix mixed language issues (e.g., if a sentence is primarily Chinese but contains random English words "
         "that are likely recognition errors, correct them to Chinese. If the English is intentional/technical, preserve it).\n"
-        "4. Do NOT translate the entire text. Keep the original language structure.\n"
+        "4. Strictly maintain the original language. Do NOT translate the text. Only correct typos, punctuation, and recognition errors.\n"
         "5. Do NOT change the timestamps or the subtitle index numbers at all.\n"
         "6. Output ONLY the corrected SRT content. Do NOT include any markdown formatting (like ```srt), "
         "comments, or explanations."
