@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 # Load environment variables from .env file if present
 load_dotenv()
 
-def correct_srt_content(srt_content, api_key=None, base_url=None, model="gpt-3.5-turbo"):
+def correct_srt_content(srt_content, api_key=None, base_url=None, model="gpt-4o-mini"):
     """
     Corrects typos and mixed language errors in SRT content using an LLM.
     

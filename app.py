@@ -221,7 +221,13 @@ if uploaded_file is not None:
                     st.caption("⚠️ No System API Key found")
 
             with c2:
-                model_input = st.text_input("Model Name", value="gpt-3.5-turbo", help="e.g. gpt-4, gpt-3.5-turbo, claude-3")
+                model_options = ["gpt-4o-mini", "gpt-4o", "gemini-1.5-flash", "Custom"]
+                selected_model = st.selectbox("Model Name", options=model_options, index=0, help="Select the LLM model to use")
+                
+                if selected_model == "Custom":
+                    model_input = st.text_input("Enter Custom Model Name", value="gpt-4o-mini")
+                else:
+                    model_input = selected_model
             
             base_url_input = st.text_input("Base URL (Optional)", value=base_url_env, help="e.g. https://api.moonshot.cn/v1")
 
