@@ -32,7 +32,8 @@ def correct_srt_content(srt_content, api_key=None, base_url=None, model="gpt-4o-
         "4. Strictly maintain the original language. Do NOT translate the text. Only correct typos, punctuation, and recognition errors.\n"
         "5. Do NOT change the timestamps or the subtitle index numbers at all.\n"
         "6. Output ONLY the corrected SRT content. Do NOT include any markdown formatting (like ```srt), "
-        "comments, or explanations."
+        "comments, or explanations.\n"
+        "7. Use spaces instead of commas where appropriate for better readability (e.g., between clauses or phrases where a pause is natural but a comma feels too heavy)."
     )
     
     messages = [
