@@ -20,6 +20,7 @@ try:
     from funclip.videoclipper import VideoClipper
     from funasr import AutoModel
     from funclip.llm.srt_corrector import correct_srt_content
+    from funclip.llm.chinese_converter import convert_to_traditional
 except ImportError as e:
     print(f"Error importing modules: {e}")
     sys.exit(1)
@@ -156,6 +157,9 @@ def run_llm_correction(original_srt, api_key, model_name, custom_model, base_url
     # Generate HTML Diff
     diff_html = generate_diff_html(original_srt, corrected_srt)
     
+    # Convert corrected SRT to Traditional Chinese
+    traditional_srt = convert_to_traditional(corrected_srt)
+    
     # Save SRT files to system temp directory for Gradio compatibility
     base_name = current_state.get("original_filename", "subtitles")
     temp_dir = tempfile.gettempdir()
@@ -165,13 +169,19 @@ def run_llm_correction(original_srt, api_key, model_name, custom_model, base_url
     with open(orig_path, 'w', encoding='utf-8') as f:
         f.write(original_srt)
     
-    # Save Corrected SRT to temp file with proper filename
+    # Save Corrected SRT (Simplified) to temp file
     corr_filename = f"corrected_{base_name}.srt"
     corr_path = os.path.join(temp_dir, corr_filename)
     with open(corr_path, 'w', encoding='utf-8') as f:
         f.write(corrected_srt)
     
-    return original_srt, corrected_srt, diff_html, orig_path, corr_path
+    # Save Corrected SRT (Traditional) to temp file
+    trad_filename = f"corrected_{base_name}_traditional.srt"
+    trad_path = os.path.join(temp_dir, trad_filename)
+    with open(trad_path, 'w', encoding='utf-8') as f:
+        f.write(traditional_srt)
+    
+    return original_srt, corrected_srt, diff_html, orig_path, corr_path, trad_path
 
 
 def generate_diff_html(original, corrected):
@@ -395,10 +405,15 @@ with gr.Blocks(
                     interactive=False,
                     lines=10
                 )
-                download_corrected = gr.File(
-                    label="📥 Download Corrected",
-                    interactive=False
-                )
+                with gr.Row():
+                    download_corrected = gr.File(
+                        label="📥 Download Corrected",
+                        interactive=False
+                    )
+                    download_traditional = gr.File(
+                        label="📥 Download Corrected (繁體)",
+                        interactive=False
+                    )
         
         # Diff View
         with gr.Accordion("🔍 Detailed Diff View", open=True):
@@ -412,7 +427,7 @@ with gr.Blocks(
         if not original_srt:
             raise gr.Error("No SRT content found. Please process a media file first.")
         
-        original, corrected, diff_html, orig_path, corr_path = run_llm_correction(
+        original, corrected, diff_html, orig_path, corr_path, trad_path = run_llm_correction(
             original_srt, api_key, model_name, custom_model, base_url
         )
         
@@ -423,7 +438,8 @@ with gr.Blocks(
             corrected,
             diff_html,
             orig_path,
-            corr_path
+            corr_path,
+            trad_path
         )
     
     # Connect LLM Logic with button state management and error handling
@@ -444,7 +460,7 @@ with gr.Blocks(
     ).then(
         fn=safe_correction_wrapper,
         inputs=[api_key_input, model_dropdown, custom_model_input, base_url_input],
-        outputs=[correction_results, original_display, corrected_display, diff_view, download_original, download_corrected]
+        outputs=[correction_results, original_display, corrected_display, diff_view, download_original, download_corrected, download_traditional]
     ).then(
         fn=lambda: gr.update(interactive=True, value="✨ Run Auto Correction"),
         outputs=[correct_btn]

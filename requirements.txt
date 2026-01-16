@@ -15,3 +15,4 @@ curl_cffi
 streamlit
 litellm
 python-dotenv
+opencc-python-reimplemented
