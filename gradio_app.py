@@ -218,6 +218,34 @@ def update_custom_model_visibility(model_choice):
 
 # --- 5. GRADIO UI LAYOUT ---
 
+def translate_srt_to_traditional(srt_file):
+    """Translate an SRT file to Traditional Chinese."""
+    if not srt_file:
+        raise gr.Error("Please upload an SRT file first.")
+    
+    # Read the SRT content
+    with open(srt_file, 'r', encoding='utf-8') as f:
+        srt_content = f.read()
+    
+    if not srt_content.strip():
+        raise gr.Error("The uploaded SRT file is empty.")
+    
+    # Convert to Traditional Chinese
+    traditional_srt = convert_to_traditional(srt_content)
+    
+    # Save to temp file with proper filename
+    original_name = os.path.basename(srt_file)
+    base_name = os.path.splitext(original_name)[0]
+    temp_dir = tempfile.gettempdir()
+    
+    trad_filename = f"{base_name}_traditional.srt"
+    trad_path = os.path.join(temp_dir, trad_filename)
+    with open(trad_path, 'w', encoding='utf-8') as f:
+        f.write(traditional_srt)
+    
+    return srt_content, traditional_srt, trad_path
+
+
 with gr.Blocks(
     title="FunClip Pro - Gradio Edition",
     theme=gr.themes.Soft(
@@ -237,234 +265,300 @@ with gr.Blocks(
     # Model Status
     gr.Markdown("✅ **AI Model Ready**")
     
-    # --- MAIN PROCESSING SECTION ---
-    with gr.Row():
-        # Left Column: Input
-        with gr.Column(scale=1):
-            gr.Markdown("### 📤 Upload Media")
-            input_file = gr.File(
-                label="Audio/Video File",
-                file_types=["audio", "video"],
-                file_count="single"
+    with gr.Tabs():
+        # --- TAB 1: TRANSCRIPTION ---
+        with gr.Tab("🎬 Transcription"):
+            # --- MAIN PROCESSING SECTION ---
+            with gr.Row():
+                # Left Column: Input
+                with gr.Column(scale=1):
+                    gr.Markdown("### 📤 Upload Media")
+                    input_file = gr.File(
+                        label="Audio/Video File",
+                        file_types=["audio", "video"],
+                        file_count="single"
+                    )
+                    
+                    # Media Preview
+                    with gr.Group():
+                        gr.Markdown("**Preview**")
+                        video_preview = gr.Video(
+                            label="Video Preview",
+                            visible=False,
+                            height=300
+                        )
+                        audio_preview = gr.Audio(
+                            label="Audio Preview",
+                            visible=False
+                        )
+                    
+                    process_btn = gr.Button(
+                        "🚀 Start Processing",
+                        variant="primary",
+                        size="lg"
+                    )
+                    
+                    # Status Display
+                    status_display = gr.Textbox(
+                        label="Status",
+                        value="Ready",
+                        interactive=False,
+                        lines=1
+                    )
+                
+                # Right Column: Results
+                with gr.Column(scale=1):
+                    gr.Markdown("### 📝 Results")
+                    
+                    gr.Markdown("**Recognized Text**")
+                    output_text = gr.Markdown(
+                        value="*Transcription will appear here...*",
+                        elem_id="recognized-text"
+                    )
+                    
+                    with gr.Group():
+                        output_srt = gr.TextArea(
+                            label="SRT Subtitles",
+                            interactive=False,
+                            lines=8,
+                            placeholder="SRT subtitles will appear here..."
+                        )
+                        download_srt = gr.File(
+                            label="📥 Download SRT",
+                            interactive=False
+                        )
+            
+            # Update preview based on file type
+            def update_preview(file_path):
+                if not file_path:
+                    return gr.update(visible=False, value=None), gr.update(visible=False, value=None)
+                
+                _, ext = os.path.splitext(file_path)
+                if ext.lower() in ['.mp4', '.mov', '.avi', '.mkv']:
+                    return gr.update(visible=True, value=file_path), gr.update(visible=False, value=None)
+                else:
+                    return gr.update(visible=False, value=None), gr.update(visible=True, value=file_path)
+            
+            input_file.change(
+                fn=update_preview,
+                inputs=[input_file],
+                outputs=[video_preview, audio_preview]
             )
             
-            # Media Preview
-            with gr.Group():
-                gr.Markdown("**Preview**")
-                video_preview = gr.Video(
-                    label="Video Preview",
-                    visible=False,
-                    height=300
-                )
-                audio_preview = gr.Audio(
-                    label="Audio Preview",
-                    visible=False
-                )
+            # Note: process_btn click handler is connected below, after correct_btn is defined
             
-            process_btn = gr.Button(
-                "🚀 Start Processing",
-                variant="primary",
-                size="lg"
-            )
+            # --- LLM CORRECTION SECTION (Same page, below results) ---
+            gr.Markdown("---")  # Divider
+            gr.Markdown("## 🤖 AI Auto Correction")
+            gr.Markdown("Use LLM to automatically fix typos, recognition errors, and improve subtitle quality.")
             
-            # Status Display
-            status_display = gr.Textbox(
-                label="Status",
-                value="Ready",
-                interactive=False,
-                lines=1
-            )
-        
-        # Right Column: Results
-        with gr.Column(scale=1):
-            gr.Markdown("### 📝 Results")
-            
-            gr.Markdown("**Recognized Text**")
-            output_text = gr.Markdown(
-                value="*Transcription will appear here...*",
-                elem_id="recognized-text"
-            )
-            
-            with gr.Group():
-                output_srt = gr.TextArea(
-                    label="SRT Subtitles",
-                    interactive=False,
-                    lines=8,
-                    placeholder="SRT subtitles will appear here..."
-                )
-                download_srt = gr.File(
-                    label="📥 Download SRT",
-                    interactive=False
-                )
-    
-    # Update preview based on file type
-    def update_preview(file_path):
-        if not file_path:
-            return gr.update(visible=False, value=None), gr.update(visible=False, value=None)
-        
-        _, ext = os.path.splitext(file_path)
-        if ext.lower() in ['.mp4', '.mov', '.avi', '.mkv']:
-            return gr.update(visible=True, value=file_path), gr.update(visible=False, value=None)
-        else:
-            return gr.update(visible=False, value=None), gr.update(visible=True, value=file_path)
-    
-    input_file.change(
-        fn=update_preview,
-        inputs=[input_file],
-        outputs=[video_preview, audio_preview]
-    )
-    
-    # Note: process_btn click handler is connected below, after correct_btn is defined
-    
-    # --- LLM CORRECTION SECTION (Same page, below results) ---
-    gr.Markdown("---")  # Divider
-    gr.Markdown("## 🤖 AI Auto Correction")
-    gr.Markdown("Use LLM to automatically fix typos, recognition errors, and improve subtitle quality.")
-    
-    # LLM Settings in collapsible accordion
-    with gr.Accordion("⚙️ LLM Settings", open=False):
-        with gr.Row():
-            with gr.Column(scale=1):
-                api_key_input = gr.Textbox(
-                    label="API Key (OpenAI/Compatible)",
-                    placeholder="sk-... (leave empty to use system key)",
-                    type="password"
-                )
-                api_key_status = gr.Markdown(get_api_key_status())
-            
-            with gr.Column(scale=1):
-                model_dropdown = gr.Dropdown(
-                    choices=["gpt-4o-mini", "gpt-4o", "gemini-1.5-flash", "Custom"],
-                    value="gpt-4o-mini",
-                    label="Model",
-                    allow_custom_value=False
-                )
-                custom_model_input = gr.Textbox(
-                    label="Custom Model Name",
-                    placeholder="e.g., claude-3-haiku-20240307",
-                    visible=False
-                )
-        
-        base_url_input = gr.Textbox(
-            label="Base URL (Optional)",
-            placeholder="e.g., https://api.moonshot.cn/v1",
-            value=os.getenv("OPENAI_BASE_URL", "")
-        )
-    
-    # Show/hide custom model input
-    model_dropdown.change(
-        fn=update_custom_model_visibility,
-        inputs=[model_dropdown],
-        outputs=[custom_model_input]
-    )
-    
-    # Hidden state to store SRT for correction (auto-filled from transcription)
-    correction_source_srt = gr.State(value="")
-    
-    correct_btn = gr.Button(
-        "✨ Run Auto Correction",
-        variant="primary",
-        size="lg",
-        interactive=False  # Disabled until SRT is ready
-    )
-    
-    # Now connect the process_btn click handler (after correct_btn is defined)
-    process_btn.click(
-        fn=lambda: gr.update(interactive=False, value="⏳ Processing..."),
-        outputs=[process_btn]
-    ).then(
-        fn=process_media,
-        inputs=[input_file],
-        outputs=[output_text, output_srt, download_srt, status_display]
-    ).then(
-        fn=lambda: (gr.update(interactive=True, value="🚀 Start Processing"), gr.update(interactive=True)),
-        outputs=[process_btn, correct_btn]
-    )
-    
-    # Results Section (only shows after correction is run)
-    with gr.Group(visible=False) as correction_results:
-        gr.Markdown("### 📊 Correction Results")
-        
-        with gr.Row():
-            with gr.Column(scale=1):
-                gr.Markdown("**Original**")
-                original_display = gr.TextArea(
-                    label="Original SRT",
-                    interactive=False,
-                    lines=10
-                )
-                download_original = gr.File(
-                    label="📥 Download Original",
-                    interactive=False
-                )
-            
-            with gr.Column(scale=1):
-                gr.Markdown("**Corrected**")
-                corrected_display = gr.TextArea(
-                    label="Corrected SRT",
-                    interactive=False,
-                    lines=10
-                )
+            # LLM Settings in collapsible accordion
+            with gr.Accordion("⚙️ LLM Settings", open=False):
                 with gr.Row():
-                    download_corrected = gr.File(
-                        label="📥 Download Corrected",
+                    with gr.Column(scale=1):
+                        api_key_input = gr.Textbox(
+                            label="API Key (OpenAI/Compatible)",
+                            placeholder="sk-... (leave empty to use system key)",
+                            type="password"
+                        )
+                        api_key_status = gr.Markdown(get_api_key_status())
+                    
+                    with gr.Column(scale=1):
+                        model_dropdown = gr.Dropdown(
+                            choices=["gpt-4o-mini", "gpt-4o", "gemini-1.5-flash", "Custom"],
+                            value="gpt-4o-mini",
+                            label="Model",
+                            allow_custom_value=False
+                        )
+                        custom_model_input = gr.Textbox(
+                            label="Custom Model Name",
+                            placeholder="e.g., claude-3-haiku-20240307",
+                            visible=False
+                        )
+                
+                base_url_input = gr.Textbox(
+                    label="Base URL (Optional)",
+                    placeholder="e.g., https://api.moonshot.cn/v1",
+                    value=os.getenv("OPENAI_BASE_URL", "")
+                )
+            
+            # Show/hide custom model input
+            model_dropdown.change(
+                fn=update_custom_model_visibility,
+                inputs=[model_dropdown],
+                outputs=[custom_model_input]
+            )
+            
+            # Hidden state to store SRT for correction (auto-filled from transcription)
+            correction_source_srt = gr.State(value="")
+            
+            correct_btn = gr.Button(
+                "✨ Run Auto Correction",
+                variant="primary",
+                size="lg",
+                interactive=False  # Disabled until SRT is ready
+            )
+            
+            # Now connect the process_btn click handler (after correct_btn is defined)
+            process_btn.click(
+                fn=lambda: gr.update(interactive=False, value="⏳ Processing..."),
+                outputs=[process_btn]
+            ).then(
+                fn=process_media,
+                inputs=[input_file],
+                outputs=[output_text, output_srt, download_srt, status_display]
+            ).then(
+                fn=lambda: (gr.update(interactive=True, value="🚀 Start Processing"), gr.update(interactive=True)),
+                outputs=[process_btn, correct_btn]
+            )
+            
+            # Results Section (only shows after correction is run)
+            with gr.Group(visible=False) as correction_results:
+                gr.Markdown("### 📊 Correction Results")
+                
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        gr.Markdown("**Original**")
+                        original_display = gr.TextArea(
+                            label="Original SRT",
+                            interactive=False,
+                            lines=10
+                        )
+                        download_original = gr.File(
+                            label="📥 Download Original",
+                            interactive=False
+                        )
+                    
+                    with gr.Column(scale=1):
+                        gr.Markdown("**Corrected**")
+                        corrected_display = gr.TextArea(
+                            label="Corrected SRT",
+                            interactive=False,
+                            lines=10
+                        )
+                        with gr.Row():
+                            download_corrected = gr.File(
+                                label="📥 Download Corrected",
+                                interactive=False
+                            )
+                            download_traditional = gr.File(
+                                label="📥 Download Corrected (繁體)",
+                                interactive=False
+                            )
+                
+                # Diff View
+                with gr.Accordion("🔍 Detailed Diff View", open=True):
+                    diff_view = gr.HTML()
+            
+            # Function to run correction and show results
+            def run_correction_and_show(api_key, model_name, custom_model, base_url):
+                # Use stored SRT from transcription
+                original_srt = current_state.get("original_srt", "")
+                
+                if not original_srt:
+                    raise gr.Error("No SRT content found. Please process a media file first.")
+                
+                original, corrected, diff_html, orig_path, corr_path, trad_path = run_llm_correction(
+                    original_srt, api_key, model_name, custom_model, base_url
+                )
+                
+                # Return results and make results group visible
+                return (
+                    gr.update(visible=True),  # Show results group
+                    original,
+                    corrected,
+                    diff_html,
+                    orig_path,
+                    corr_path,
+                    trad_path
+                )
+            
+            # Connect LLM Logic with button state management and error handling
+            def safe_correction_wrapper(api_key, model_name, custom_model, base_url):
+                """Wrapper that catches errors and returns them along with a flag."""
+                try:
+                    result = run_correction_and_show(api_key, model_name, custom_model, base_url)
+                    return result
+                except gr.Error:
+                    # Re-raise Gradio errors to show in UI
+                    raise
+                except Exception as e:
+                    raise gr.Error(f"Correction failed: {str(e)}")
+            
+            correct_btn.click(
+                fn=lambda: gr.update(interactive=False, value="⏳ Correcting..."),
+                outputs=[correct_btn]
+            ).then(
+                fn=safe_correction_wrapper,
+                inputs=[api_key_input, model_dropdown, custom_model_input, base_url_input],
+                outputs=[correction_results, original_display, corrected_display, diff_view, download_original, download_corrected, download_traditional]
+            ).then(
+                fn=lambda: gr.update(interactive=True, value="✨ Run Auto Correction"),
+                outputs=[correct_btn]
+            )
+        
+        # --- TAB 2: SRT TRANSLATOR ---
+        with gr.Tab("🔤 SRT Translator"):
+            gr.Markdown("### 📄 Translate SRT to Traditional Chinese (繁體中文)")
+            gr.Markdown("Upload an SRT file in Simplified Chinese and convert it to Traditional Chinese.")
+            
+            with gr.Row():
+                # Left Column: Upload
+                with gr.Column(scale=1):
+                    gr.Markdown("### 📤 Upload SRT File")
+                    srt_input_file = gr.File(
+                        label="SRT File",
+                        file_types=[".srt"],
+                        file_count="single"
+                    )
+                    
+                    translate_btn = gr.Button(
+                        "🔄 Translate to Traditional Chinese",
+                        variant="primary",
+                        size="lg"
+                    )
+                    
+                    gr.Markdown("### 📥 Download")
+                    download_translated_srt = gr.File(
+                        label="Download Translated SRT (繁體)",
                         interactive=False
                     )
-                    download_traditional = gr.File(
-                        label="📥 Download Corrected (繁體)",
-                        interactive=False
-                    )
-        
-        # Diff View
-        with gr.Accordion("🔍 Detailed Diff View", open=True):
-            diff_view = gr.HTML()
-    
-    # Function to run correction and show results
-    def run_correction_and_show(api_key, model_name, custom_model, base_url):
-        # Use stored SRT from transcription
-        original_srt = current_state.get("original_srt", "")
-        
-        if not original_srt:
-            raise gr.Error("No SRT content found. Please process a media file first.")
-        
-        original, corrected, diff_html, orig_path, corr_path, trad_path = run_llm_correction(
-            original_srt, api_key, model_name, custom_model, base_url
-        )
-        
-        # Return results and make results group visible
-        return (
-            gr.update(visible=True),  # Show results group
-            original,
-            corrected,
-            diff_html,
-            orig_path,
-            corr_path,
-            trad_path
-        )
-    
-    # Connect LLM Logic with button state management and error handling
-    def safe_correction_wrapper(api_key, model_name, custom_model, base_url):
-        """Wrapper that catches errors and returns them along with a flag."""
-        try:
-            result = run_correction_and_show(api_key, model_name, custom_model, base_url)
-            return result
-        except gr.Error:
-            # Re-raise Gradio errors to show in UI
-            raise
-        except Exception as e:
-            raise gr.Error(f"Correction failed: {str(e)}")
-    
-    correct_btn.click(
-        fn=lambda: gr.update(interactive=False, value="⏳ Correcting..."),
-        outputs=[correct_btn]
-    ).then(
-        fn=safe_correction_wrapper,
-        inputs=[api_key_input, model_dropdown, custom_model_input, base_url_input],
-        outputs=[correction_results, original_display, corrected_display, diff_view, download_original, download_corrected, download_traditional]
-    ).then(
-        fn=lambda: gr.update(interactive=True, value="✨ Run Auto Correction"),
-        outputs=[correct_btn]
-    )
+                
+                # Right Column: Preview
+                with gr.Column(scale=1):
+                    gr.Markdown("### 📝 Preview")
+                    
+                    with gr.Row():
+                        with gr.Column(scale=1):
+                            gr.Markdown("**Original (简体)**")
+                            original_srt_preview = gr.TextArea(
+                                label="Original SRT",
+                                interactive=False,
+                                lines=15,
+                                placeholder="Original content will appear here..."
+                            )
+                        
+                        with gr.Column(scale=1):
+                            gr.Markdown("**Translated (繁體)**")
+                            translated_srt_preview = gr.TextArea(
+                                label="Translated SRT",
+                                interactive=False,
+                                lines=15,
+                                placeholder="Translated content will appear here..."
+                            )
+            
+            # Connect translate button
+            translate_btn.click(
+                fn=lambda: gr.update(interactive=False, value="⏳ Translating..."),
+                outputs=[translate_btn]
+            ).then(
+                fn=translate_srt_to_traditional,
+                inputs=[srt_input_file],
+                outputs=[original_srt_preview, translated_srt_preview, download_translated_srt]
+            ).then(
+                fn=lambda: gr.update(interactive=True, value="🔄 Translate to Traditional Chinese"),
+                outputs=[translate_btn]
+            )
 
     # Footer
     gr.Markdown(
