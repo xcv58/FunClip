@@ -52,7 +52,8 @@ class VideoClipper():
                                                     hotword=hotwords, 
                                                     pred_timestamp=self.lang=='en',
                                                     en_post_proc=self.lang=='en',
-                                                    cache={})
+                                                    cache={},
+                                                    batch_size_s=300)
             res_srt = generate_srt(rec_result[0]['sentence_info'])
             state['sd_sentences'] = rec_result[0]['sentence_info']
         else:
@@ -65,7 +66,8 @@ class VideoClipper():
                                                     output_dir=output_dir,
                                                     pred_timestamp=self.lang=='en',
                                                     en_post_proc=self.lang=='en',
-                                                    cache={})
+                                                    cache={},
+                                                    batch_size_s=300)
             res_srt = generate_srt(rec_result[0]['sentence_info'])
         state['recog_res_raw'] = rec_result[0]['raw_text']
         state['timestamp'] = rec_result[0]['timestamp']

@@ -31,7 +31,8 @@ funasr_model = AutoModel(
     model="iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch",
     vad_model="damo/speech_fsmn_vad_zh-cn-16k-common-pytorch",
     punc_model="damo/punc_ct-transformer_zh-cn-common-vocab272727-pytorch",
-    spk_model="damo/speech_campplus_sv_zh-cn_16k-common",
+    # Note: spk_model removed - not needed when sd_switch='no' and causes MPS float64 issues
+    device="mps",  # Apple Silicon GPU acceleration (use "cuda:0" for NVIDIA GPUs)
 )
 print("✅ AI Model Ready")
 
