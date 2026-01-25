@@ -130,6 +130,8 @@ def get_api_key_status():
 
 def run_llm_correction(original_srt, api_key, model_name, custom_model, base_url, session_state, progress=gr.Progress()):
     """Run LLM-based SRT correction."""
+    start_time = time.time()
+    
     if not original_srt or not original_srt.strip():
         raise gr.Error("No SRT content found. Please process a video first.")
     
@@ -180,7 +182,11 @@ def run_llm_correction(original_srt, api_key, model_name, custom_model, base_url
     with open(trad_path, 'w', encoding='utf-8') as f:
         f.write(traditional_srt)
     
-    return original_srt, corrected_srt, diff_html, orig_path, corr_path, trad_path
+    # Calculate elapsed time
+    elapsed_time = time.time() - start_time
+    status_msg = f"✅ Correction completed in {elapsed_time:.2f}s"
+    
+    return original_srt, corrected_srt, diff_html, orig_path, corr_path, trad_path, status_msg
 
 
 def generate_diff_html(original, corrected):
@@ -415,6 +421,13 @@ with gr.Blocks(
             with gr.Group(visible=False) as correction_results:
                 gr.Markdown("### 📊 Correction Results")
                 
+                correction_status = gr.Textbox(
+                    label="Status",
+                    value="",
+                    interactive=False,
+                    lines=1
+                )
+                
                 with gr.Row():
                     with gr.Column(scale=1):
                         gr.Markdown("**Original**")
@@ -457,13 +470,14 @@ with gr.Blocks(
                 if not original_srt:
                     raise gr.Error("No SRT content found. Please process a media file first.")
                 
-                original, corrected, diff_html, orig_path, corr_path, trad_path = run_llm_correction(
+                original, corrected, diff_html, orig_path, corr_path, trad_path, status_msg = run_llm_correction(
                     original_srt, api_key, model_name, custom_model, base_url, state
                 )
                 
                 # Return results and make results group visible
                 return (
                     gr.update(visible=True),  # Show results group
+                    status_msg,
                     original,
                     corrected,
                     diff_html,
@@ -490,7 +504,7 @@ with gr.Blocks(
             ).then(
                 fn=safe_correction_wrapper,
                 inputs=[api_key_input, model_dropdown, custom_model_input, base_url_input, session_state],
-                outputs=[correction_results, original_display, corrected_display, diff_view, download_original, download_corrected, download_traditional]
+                outputs=[correction_results, correction_status, original_display, corrected_display, diff_view, download_original, download_corrected, download_traditional]
             ).then(
                 fn=lambda: gr.update(interactive=True, value="✨ Run Auto Correction"),
                 outputs=[correct_btn]
