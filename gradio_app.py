@@ -35,27 +35,25 @@ funasr_model = AutoModel(
 )
 print("✅ AI Model Ready")
 
-# --- 3. GLOBAL STATE ---
-# Store the original filename and SRT for use in corrections
-current_state = {
-    "original_filename": None,
-    "original_srt": None
-}
+# --- 3. STATE ---
+# Note: Per-session state is now handled via gr.State() components
+# to support concurrent users without data conflicts
 
 # --- 4. PROCESSING FUNCTIONS ---
 
-def process_media(file_path, progress=gr.Progress()):
+def process_media(file_path, session_state, progress=gr.Progress()):
     """Process audio/video file and return transcription results."""
     if not file_path:
         gr.Warning("Please upload a file first.")
-        return None, None, None, "No file uploaded"
+        return None, None, None, "No file uploaded", session_state
     
     start_time = time.time()
     
-    # Get original filename for later use
+    # Get original filename for later use (stored in session state)
     original_name = os.path.basename(file_path)
     base_name = os.path.splitext(original_name)[0]
-    current_state["original_filename"] = base_name
+    session_state = session_state.copy() if session_state else {}
+    session_state["original_filename"] = base_name
     
     # Determine file type
     _, ext = os.path.splitext(file_path)
@@ -102,8 +100,8 @@ def process_media(file_path, progress=gr.Progress()):
     total_time = end_time - start_time
     speed_x = duration_sec / total_time if total_time > 0 and duration_sec > 0 else 0
     
-    # Store SRT for correction feature
-    current_state["original_srt"] = res_srt
+    # Store SRT for correction feature (in session state)
+    session_state["original_srt"] = res_srt
     
     # Save SRT to temp file with proper filename (use system temp dir for Gradio compatibility)
     srt_filename = f"{base_name}.srt"
@@ -118,7 +116,7 @@ def process_media(file_path, progress=gr.Progress()):
     # Format text with proper line breaks for Markdown display
     formatted_text = res_text.replace("\n", "\n\n") if res_text else ""
     
-    return formatted_text, res_srt, srt_path, status_msg
+    return formatted_text, res_srt, srt_path, status_msg, session_state
 
 
 def get_api_key_status():
@@ -129,7 +127,7 @@ def get_api_key_status():
     return "⚠️ No System API Key found"
 
 
-def run_llm_correction(original_srt, api_key, model_name, custom_model, base_url, progress=gr.Progress()):
+def run_llm_correction(original_srt, api_key, model_name, custom_model, base_url, session_state, progress=gr.Progress()):
     """Run LLM-based SRT correction."""
     if not original_srt or not original_srt.strip():
         raise gr.Error("No SRT content found. Please process a video first.")
@@ -161,7 +159,7 @@ def run_llm_correction(original_srt, api_key, model_name, custom_model, base_url
     traditional_srt = convert_to_traditional(corrected_srt)
     
     # Save SRT files to system temp directory for Gradio compatibility
-    base_name = current_state.get("original_filename", "subtitles")
+    base_name = session_state.get("original_filename", "subtitles") if session_state else "subtitles"
     temp_dir = tempfile.gettempdir()
     
     orig_filename = f"{base_name}.srt"
@@ -264,6 +262,9 @@ with gr.Blocks(
     
     # Model Status
     gr.Markdown("✅ **AI Model Ready**")
+    
+    # Per-session state to store filename and SRT (isolated per user session)
+    session_state = gr.State(value={})
     
     with gr.Tabs():
         # --- TAB 1: TRANSCRIPTION ---
@@ -389,9 +390,6 @@ with gr.Blocks(
                 outputs=[custom_model_input]
             )
             
-            # Hidden state to store SRT for correction (auto-filled from transcription)
-            correction_source_srt = gr.State(value="")
-            
             correct_btn = gr.Button(
                 "✨ Run Auto Correction",
                 variant="primary",
@@ -405,8 +403,8 @@ with gr.Blocks(
                 outputs=[process_btn]
             ).then(
                 fn=process_media,
-                inputs=[input_file],
-                outputs=[output_text, output_srt, download_srt, status_display]
+                inputs=[input_file, session_state],
+                outputs=[output_text, output_srt, download_srt, status_display, session_state]
             ).then(
                 fn=lambda: (gr.update(interactive=True, value="🚀 Start Processing"), gr.update(interactive=True)),
                 outputs=[process_btn, correct_btn]
@@ -451,15 +449,15 @@ with gr.Blocks(
                     diff_view = gr.HTML()
             
             # Function to run correction and show results
-            def run_correction_and_show(api_key, model_name, custom_model, base_url):
-                # Use stored SRT from transcription
-                original_srt = current_state.get("original_srt", "")
+            def run_correction_and_show(api_key, model_name, custom_model, base_url, state):
+                # Use stored SRT from transcription (from session state)
+                original_srt = state.get("original_srt", "") if state else ""
                 
                 if not original_srt:
                     raise gr.Error("No SRT content found. Please process a media file first.")
                 
                 original, corrected, diff_html, orig_path, corr_path, trad_path = run_llm_correction(
-                    original_srt, api_key, model_name, custom_model, base_url
+                    original_srt, api_key, model_name, custom_model, base_url, state
                 )
                 
                 # Return results and make results group visible
@@ -474,10 +472,10 @@ with gr.Blocks(
                 )
             
             # Connect LLM Logic with button state management and error handling
-            def safe_correction_wrapper(api_key, model_name, custom_model, base_url):
+            def safe_correction_wrapper(api_key, model_name, custom_model, base_url, state):
                 """Wrapper that catches errors and returns them along with a flag."""
                 try:
-                    result = run_correction_and_show(api_key, model_name, custom_model, base_url)
+                    result = run_correction_and_show(api_key, model_name, custom_model, base_url, state)
                     return result
                 except gr.Error:
                     # Re-raise Gradio errors to show in UI
@@ -490,7 +488,7 @@ with gr.Blocks(
                 outputs=[correct_btn]
             ).then(
                 fn=safe_correction_wrapper,
-                inputs=[api_key_input, model_dropdown, custom_model_input, base_url_input],
+                inputs=[api_key_input, model_dropdown, custom_model_input, base_url_input, session_state],
                 outputs=[correction_results, original_display, corrected_display, diff_view, download_original, download_corrected, download_traditional]
             ).then(
                 fn=lambda: gr.update(interactive=True, value="✨ Run Auto Correction"),
