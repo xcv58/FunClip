@@ -7,6 +7,7 @@ import difflib
 from dotenv import load_dotenv
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 import tempfile
+import zipfile
 
 load_dotenv()
 
@@ -224,44 +225,67 @@ def update_custom_model_visibility(model_choice):
 
 # --- 5. GRADIO UI LAYOUT ---
 
-def translate_srt_to_traditional(srt_file):
-    """Translate an SRT file to Traditional Chinese."""
-    if not srt_file:
-        raise gr.Error("Please upload an SRT file first.")
-    
-    # Read the SRT content
-    with open(srt_file, 'r', encoding='utf-8') as f:
-        srt_content = f.read()
-    
-    if not srt_content.strip():
-        raise gr.Error("The uploaded SRT file is empty.")
-    
-    # Convert to Traditional Chinese
-    traditional_srt = convert_to_traditional(srt_content)
-    
-    # Save to temp file with proper filename
-    original_name = os.path.basename(srt_file)
-    base_name = os.path.splitext(original_name)[0]
-    temp_dir = tempfile.gettempdir()
-    
-    trad_filename = f"{base_name}_traditional.srt"
-    trad_path = os.path.join(temp_dir, trad_filename)
-    with open(trad_path, 'w', encoding='utf-8') as f:
-        f.write(traditional_srt)
-    
-    return srt_content, traditional_srt, trad_path
-
-
-def translate_srt_to_english_fn(srt_file, api_key, model_name, custom_model, base_url):
-    """Translate an SRT file from Simplified Chinese to English using LLM."""
-    if not srt_file:
+def translate_srt_to_traditional(srt_files):
+    """Translate one or more SRT files to Traditional Chinese."""
+    if not srt_files:
         raise gr.Error("Please upload an SRT file first.")
 
-    with open(srt_file, 'r', encoding='utf-8') as f:
-        srt_content = f.read()
+    # Normalize to list
+    if isinstance(srt_files, str):
+        srt_files = [srt_files]
 
-    if not srt_content.strip():
-        raise gr.Error("The uploaded SRT file is empty.")
+    temp_dir = tempfile.mkdtemp()
+    output_paths = []
+    last_original = ""
+    last_translated = ""
+
+    for srt_file in srt_files:
+        with open(srt_file, 'r', encoding='utf-8') as f:
+            srt_content = f.read()
+
+        if not srt_content.strip():
+            continue
+
+        traditional_srt = convert_to_traditional(srt_content)
+
+        original_name = os.path.basename(srt_file)
+        base_name = os.path.splitext(original_name)[0]
+        trad_filename = f"{base_name}_traditional.srt"
+        trad_path = os.path.join(temp_dir, trad_filename)
+        with open(trad_path, 'w', encoding='utf-8') as f:
+            f.write(traditional_srt)
+
+        output_paths.append(trad_path)
+        last_original = srt_content
+        last_translated = traditional_srt
+
+    if not output_paths:
+        raise gr.Error("All uploaded SRT files are empty.")
+
+    if len(output_paths) == 1:
+        preview_original = last_original
+        preview_translated = last_translated
+        download_path = output_paths[0]
+    else:
+        preview_original = f"Translated {len(output_paths)} files to Traditional Chinese."
+        preview_translated = last_translated
+        zip_path = os.path.join(temp_dir, "traditional_chinese_srts.zip")
+        with zipfile.ZipFile(zip_path, 'w') as zf:
+            for p in output_paths:
+                zf.write(p, os.path.basename(p))
+        download_path = zip_path
+
+    return preview_original, preview_translated, download_path
+
+
+def translate_srt_to_english_fn(srt_files, api_key, model_name, custom_model, base_url):
+    """Translate one or more SRT files from Simplified Chinese to English using LLM."""
+    if not srt_files:
+        raise gr.Error("Please upload an SRT file first.")
+
+    # Normalize to list
+    if isinstance(srt_files, str):
+        srt_files = [srt_files]
 
     # Handle model selection
     effective_model = custom_model if model_name == "Custom" else model_name
@@ -273,27 +297,56 @@ def translate_srt_to_english_fn(srt_file, api_key, model_name, custom_model, bas
     if not eff_api_key:
         raise gr.Error("No API Key provided. Please enter an API key or set OPENAI_API_KEY in your .env file.")
 
-    try:
-        english_srt = translate_srt_to_english(
-            srt_content=srt_content,
-            api_key=eff_api_key,
-            base_url=eff_base_url,
-            model=effective_model
-        )
-    except Exception as e:
-        raise gr.Error(f"Translation failed: {str(e)}")
+    temp_dir = tempfile.mkdtemp()
+    output_paths = []
+    last_original = ""
+    last_translated = ""
 
-    # Save to temp file
-    original_name = os.path.basename(srt_file)
-    base_name = os.path.splitext(original_name)[0]
-    temp_dir = tempfile.gettempdir()
+    for srt_file in srt_files:
+        with open(srt_file, 'r', encoding='utf-8') as f:
+            srt_content = f.read()
 
-    eng_filename = f"{base_name}_english.srt"
-    eng_path = os.path.join(temp_dir, eng_filename)
-    with open(eng_path, 'w', encoding='utf-8') as f:
-        f.write(english_srt)
+        if not srt_content.strip():
+            continue
 
-    return srt_content, english_srt, eng_path
+        try:
+            english_srt = translate_srt_to_english(
+                srt_content=srt_content,
+                api_key=eff_api_key,
+                base_url=eff_base_url,
+                model=effective_model
+            )
+        except Exception as e:
+            raise gr.Error(f"Translation failed for {os.path.basename(srt_file)}: {str(e)}")
+
+        original_name = os.path.basename(srt_file)
+        base_name = os.path.splitext(original_name)[0]
+        eng_filename = f"{base_name}_english.srt"
+        eng_path = os.path.join(temp_dir, eng_filename)
+        with open(eng_path, 'w', encoding='utf-8') as f:
+            f.write(english_srt)
+
+        output_paths.append(eng_path)
+        last_original = srt_content
+        last_translated = english_srt
+
+    if not output_paths:
+        raise gr.Error("All uploaded SRT files are empty.")
+
+    if len(output_paths) == 1:
+        preview_original = last_original
+        preview_translated = last_translated
+        download_path = output_paths[0]
+    else:
+        preview_original = f"Translated {len(output_paths)} files to English."
+        preview_translated = last_translated
+        zip_path = os.path.join(temp_dir, "english_srts.zip")
+        with zipfile.ZipFile(zip_path, 'w') as zf:
+            for p in output_paths:
+                zf.write(p, os.path.basename(p))
+        download_path = zip_path
+
+    return preview_original, preview_translated, download_path
 
 
 with gr.Blocks(
@@ -583,16 +636,16 @@ with gr.Blocks(
         # --- TAB 2: SRT TRANSLATOR ---
         with gr.Tab("🔤 SRT Translator"):
             gr.Markdown("### 📄 SRT Translation Tools")
-            gr.Markdown("Upload an SRT file in Simplified Chinese and translate it to Traditional Chinese or English.")
+            gr.Markdown("Upload one or more SRT files in Simplified Chinese and translate them to Traditional Chinese or English.")
 
             with gr.Row():
                 # Left Column: Upload & Actions
                 with gr.Column(scale=1):
                     gr.Markdown("### 📤 Upload SRT File")
                     srt_input_file = gr.File(
-                        label="SRT File",
+                        label="SRT File(s)",
                         file_types=[".srt"],
-                        file_count="single"
+                        file_count="multiple"
                     )
 
                     translate_btn = gr.Button(
