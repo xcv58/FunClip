@@ -21,6 +21,7 @@ try:
     from funasr import AutoModel
     from funclip.llm.srt_corrector import correct_srt_content
     from funclip.llm.chinese_converter import convert_to_traditional
+    from funclip.llm.srt_translator import translate_srt_to_english
 except ImportError as e:
     print(f"Error importing modules: {e}")
     sys.exit(1)
@@ -251,12 +252,77 @@ def translate_srt_to_traditional(srt_file):
     return srt_content, traditional_srt, trad_path
 
 
+def translate_srt_to_english_fn(srt_file, api_key, model_name, custom_model, base_url):
+    """Translate an SRT file from Simplified Chinese to English using LLM."""
+    if not srt_file:
+        raise gr.Error("Please upload an SRT file first.")
+
+    with open(srt_file, 'r', encoding='utf-8') as f:
+        srt_content = f.read()
+
+    if not srt_content.strip():
+        raise gr.Error("The uploaded SRT file is empty.")
+
+    # Handle model selection
+    effective_model = custom_model if model_name == "Custom" else model_name
+
+    # Handle ENV variables if input is empty
+    eff_api_key = api_key if api_key else os.getenv("OPENAI_API_KEY")
+    eff_base_url = base_url if base_url else os.getenv("OPENAI_BASE_URL")
+
+    if not eff_api_key:
+        raise gr.Error("No API Key provided. Please enter an API key or set OPENAI_API_KEY in your .env file.")
+
+    try:
+        english_srt = translate_srt_to_english(
+            srt_content=srt_content,
+            api_key=eff_api_key,
+            base_url=eff_base_url,
+            model=effective_model
+        )
+    except Exception as e:
+        raise gr.Error(f"Translation failed: {str(e)}")
+
+    # Save to temp file
+    original_name = os.path.basename(srt_file)
+    base_name = os.path.splitext(original_name)[0]
+    temp_dir = tempfile.gettempdir()
+
+    eng_filename = f"{base_name}_english.srt"
+    eng_path = os.path.join(temp_dir, eng_filename)
+    with open(eng_path, 'w', encoding='utf-8') as f:
+        f.write(english_srt)
+
+    return srt_content, english_srt, eng_path
+
+
 with gr.Blocks(
     title="FunClip Pro - Gradio Edition",
     theme=gr.themes.Soft(
         primary_hue="indigo",
         secondary_hue="purple"
-    )
+    ),
+    css="""
+    /* Make entire download file row clickable */
+    .download-file tr.file {
+        cursor: pointer !important;
+    }
+    .download-file tr.file:hover {
+        background-color: var(--block-background-fill) !important;
+    }
+    .download-file tr.file td.download a {
+        position: absolute !important;
+        inset: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: flex-end !important;
+        padding-right: var(--size-2-5) !important;
+        z-index: 1 !important;
+    }
+    .download-file tr.file {
+        position: relative !important;
+    }
+    """
 ) as demo:
     
     # Header
@@ -333,7 +399,8 @@ with gr.Blocks(
                         )
                         download_srt = gr.File(
                             label="📥 Download SRT",
-                            interactive=False
+                            interactive=False,
+                            elem_classes=["download-file"]
                         )
             
             # Update preview based on file type
@@ -438,7 +505,8 @@ with gr.Blocks(
                         )
                         download_original = gr.File(
                             label="📥 Download Original",
-                            interactive=False
+                            interactive=False,
+                            elem_classes=["download-file"]
                         )
                     
                     with gr.Column(scale=1):
@@ -451,11 +519,13 @@ with gr.Blocks(
                         with gr.Row():
                             download_corrected = gr.File(
                                 label="📥 Download Corrected",
-                                interactive=False
+                                interactive=False,
+                                elem_classes=["download-file"]
                             )
                             download_traditional = gr.File(
                                 label="📥 Download Corrected (繁體)",
-                                interactive=False
+                                interactive=False,
+                                elem_classes=["download-file"]
                             )
                 
                 # Diff View
@@ -512,11 +582,11 @@ with gr.Blocks(
         
         # --- TAB 2: SRT TRANSLATOR ---
         with gr.Tab("🔤 SRT Translator"):
-            gr.Markdown("### 📄 Translate SRT to Traditional Chinese (繁體中文)")
-            gr.Markdown("Upload an SRT file in Simplified Chinese and convert it to Traditional Chinese.")
-            
+            gr.Markdown("### 📄 SRT Translation Tools")
+            gr.Markdown("Upload an SRT file in Simplified Chinese and translate it to Traditional Chinese or English.")
+
             with gr.Row():
-                # Left Column: Upload
+                # Left Column: Upload & Actions
                 with gr.Column(scale=1):
                     gr.Markdown("### 📤 Upload SRT File")
                     srt_input_file = gr.File(
@@ -524,23 +594,61 @@ with gr.Blocks(
                         file_types=[".srt"],
                         file_count="single"
                     )
-                    
+
                     translate_btn = gr.Button(
-                        "🔄 Translate to Traditional Chinese",
+                        "🔄 Translate to Traditional Chinese (繁體)",
                         variant="primary",
                         size="lg"
                     )
-                    
+
+                    gr.Markdown("---")
+
+                    translate_en_btn = gr.Button(
+                        "🌐 Translate to English",
+                        variant="primary",
+                        size="lg"
+                    )
+
+                    with gr.Accordion("⚙️ LLM Settings (for English translation)", open=False):
+                        srt_api_key_input = gr.Textbox(
+                            label="API Key",
+                            placeholder="sk-... (leave empty to use system key)",
+                            type="password"
+                        )
+                        srt_model_dropdown = gr.Dropdown(
+                            choices=["gpt-4o-mini", "gpt-4o", "gemini-1.5-flash", "Custom"],
+                            value="gpt-4o-mini",
+                            label="Model",
+                            allow_custom_value=False
+                        )
+                        srt_custom_model_input = gr.Textbox(
+                            label="Custom Model Name",
+                            placeholder="e.g., claude-3-haiku-20240307",
+                            visible=False
+                        )
+                        srt_base_url_input = gr.Textbox(
+                            label="Base URL (Optional)",
+                            placeholder="e.g., https://api.moonshot.cn/v1",
+                            value=os.getenv("OPENAI_BASE_URL", "")
+                        )
+
+                    srt_model_dropdown.change(
+                        fn=update_custom_model_visibility,
+                        inputs=[srt_model_dropdown],
+                        outputs=[srt_custom_model_input]
+                    )
+
                     gr.Markdown("### 📥 Download")
                     download_translated_srt = gr.File(
-                        label="Download Translated SRT (繁體)",
-                        interactive=False
+                        label="Download Translated SRT",
+                        interactive=False,
+                        elem_classes=["download-file"]
                     )
-                
+
                 # Right Column: Preview
                 with gr.Column(scale=1):
                     gr.Markdown("### 📝 Preview")
-                    
+
                     with gr.Row():
                         with gr.Column(scale=1):
                             gr.Markdown("**Original (简体)**")
@@ -550,17 +658,17 @@ with gr.Blocks(
                                 lines=15,
                                 placeholder="Original content will appear here..."
                             )
-                        
+
                         with gr.Column(scale=1):
-                            gr.Markdown("**Translated (繁體)**")
+                            gr.Markdown("**Translated**")
                             translated_srt_preview = gr.TextArea(
                                 label="Translated SRT",
                                 interactive=False,
                                 lines=15,
                                 placeholder="Translated content will appear here..."
                             )
-            
-            # Connect translate button
+
+            # Connect Traditional Chinese translate button
             translate_btn.click(
                 fn=lambda: gr.update(interactive=False, value="⏳ Translating..."),
                 outputs=[translate_btn]
@@ -569,8 +677,21 @@ with gr.Blocks(
                 inputs=[srt_input_file],
                 outputs=[original_srt_preview, translated_srt_preview, download_translated_srt]
             ).then(
-                fn=lambda: gr.update(interactive=True, value="🔄 Translate to Traditional Chinese"),
+                fn=lambda: gr.update(interactive=True, value="🔄 Translate to Traditional Chinese (繁體)"),
                 outputs=[translate_btn]
+            )
+
+            # Connect English translate button
+            translate_en_btn.click(
+                fn=lambda: gr.update(interactive=False, value="⏳ Translating to English..."),
+                outputs=[translate_en_btn]
+            ).then(
+                fn=translate_srt_to_english_fn,
+                inputs=[srt_input_file, srt_api_key_input, srt_model_dropdown, srt_custom_model_input, srt_base_url_input],
+                outputs=[original_srt_preview, translated_srt_preview, download_translated_srt]
+            ).then(
+                fn=lambda: gr.update(interactive=True, value="🌐 Translate to English"),
+                outputs=[translate_en_btn]
             )
 
     # Footer
