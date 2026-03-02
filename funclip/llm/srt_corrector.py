@@ -6,6 +6,33 @@ from dotenv import load_dotenv
 # Load environment variables from .env file if present
 load_dotenv()
 
+
+def build_correction_prompt():
+    """Build one unified correction prompt for all SRT correction scenarios."""
+    return (
+        "You are a professional subtitle editor. This is ERROR CORRECTION, not rewriting.\n"
+        "Correct only clear errors while strictly preserving SRT structure and original wording as much as possible.\n\n"
+        "Global rules:\n"
+        "1. Output MUST be valid SRT content only. No markdown, no comments, no explanations.\n"
+        "2. Keep EXACTLY the same number of subtitle segments as input.\n"
+        "3. Keep subtitle index numbers exactly unchanged and in the same order.\n"
+        "4. Keep ALL timestamps exactly unchanged.\n"
+        "5. Preserve blank-line boundaries between subtitle segments. Do not merge/split segments.\n"
+        "6. Confidence threshold policy:\n"
+        "- High confidence: fix the error.\n"
+        "- Medium or low confidence: keep the original text unchanged.\n"
+        "7. Minimal edit policy: prefer minimal localized edits only.\n"
+        "8. Do NOT shorten, paraphrase, or rewrite for style/readability. Only correct errors.\n"
+        "9. Do NOT translate. Keep the original language/script intent of each subtitle line.\n"
+        "10. Use spaces instead of commas where appropriate for better readability "
+        "(e.g., between clauses or phrases where a pause is natural but a comma feels too heavy).\n"
+        "11. Fix obvious typos, ASR recognition errors, punctuation issues, and minor grammar mistakes where confidence is high.\n"
+        "12. Correct names/terms only when context is clear; preserve proper nouns and technical terms if uncertain.\n"
+        "13. Fix obvious mixed-language artifacts/noise, but keep intentional foreign terms and brand names.\n"
+        "14. If in doubt, preserve the original text exactly."
+    )
+
+
 def correct_srt_content(srt_content, api_key=None, base_url=None, model="gpt-5-mini"):
     """
     Corrects typos and mixed language errors in SRT content using an LLM.
@@ -14,27 +41,12 @@ def correct_srt_content(srt_content, api_key=None, base_url=None, model="gpt-5-m
         srt_content (str): The raw SRT content to correct.
         api_key (str, optional): API key for the LLM provider. Defaults to None (uses env var).
         base_url (str, optional): Base URL for the LLM provider. Defaults to None.
-        model (str, optional): Model to use. Defaults to "gpt-3.5-turbo".
+        model (str, optional): Model to use. Defaults to "gpt-5-mini".
         
     Returns:
         str: The corrected SRT content.
     """
-    
-    # Construct the prompt
-    system_prompt = (
-        "You are a professional subtitle editor. Your task is to correct typos and fix mixed language errors "
-        "in the provided SRT subtitles. \n"
-        "Rules:\n"
-        "1. Fix obvious typos and character recognition errors.\n"
-        "2. Correct location names, famous people's names, and specific terminologies/conventions that may have been phonetic misinterpretations (e.g., correcting 'Fun Clip' to 'FunClip' if appropriate context, or correcting city names).\n"
-        "3. Fix mixed language issues (e.g., if a sentence is primarily Chinese but contains random English words "
-        "that are likely recognition errors, correct them to Chinese. If the English is intentional/technical, preserve it).\n"
-        "4. Strictly maintain the original language. Do NOT translate the text. Only correct typos, punctuation, and recognition errors.\n"
-        "5. Do NOT change the timestamps or the subtitle index numbers at all.\n"
-        "6. Output ONLY the corrected SRT content. Do NOT include any markdown formatting (like ```srt), "
-        "comments, or explanations.\n"
-        "7. Use spaces instead of commas where appropriate for better readability (e.g., between clauses or phrases where a pause is natural but a comma feels too heavy)."
-    )
+    system_prompt = build_correction_prompt()
     
     messages = [
         {"role": "system", "content": system_prompt},
@@ -42,7 +54,10 @@ def correct_srt_content(srt_content, api_key=None, base_url=None, model="gpt-5-m
     ]
     
     try:
-        logging.info(f"Sending SRT correction request to LLM (Model: {model})")
+        logging.info(
+            "Sending SRT correction request to LLM "
+            f"(Model: {model})"
+        )
         
         # litellm handles reading api_key from os.environ if not passed explicitly,
         # but if we pass it explicitly it uses that.

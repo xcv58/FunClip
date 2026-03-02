@@ -262,7 +262,14 @@ def build_download_path(file_paths, zip_filename):
     return zip_path
 
 
-def run_llm_correction_for_content(original_srt, base_name, api_key, model_name, custom_model, base_url):
+def run_llm_correction_for_content(
+    original_srt,
+    base_name,
+    api_key,
+    model_name,
+    custom_model,
+    base_url,
+):
     """Run AI correction for one SRT content string."""
     start_time = time.time()
 
@@ -281,7 +288,7 @@ def run_llm_correction_for_content(original_srt, base_name, api_key, model_name,
             srt_content=original_srt,
             api_key=eff_api_key,
             base_url=eff_base_url,
-            model=effective_model
+            model=effective_model,
         )
     except Exception as e:
         raise gr.Error(format_llm_error(e, "AI auto correction"))
@@ -318,7 +325,7 @@ def run_llm_correction(original_srt, api_key, model_name, custom_model, base_url
         api_key=api_key,
         model_name=model_name,
         custom_model=custom_model,
-        base_url=base_url
+        base_url=base_url,
     )
 
 
@@ -512,7 +519,13 @@ def resolve_translator_correction_files(source_choice, translator_state, uploade
     return uploaded_paths
 
 
-def run_llm_correction_for_files(srt_files, api_key, model_name, custom_model, base_url):
+def run_llm_correction_for_files(
+    srt_files,
+    api_key,
+    model_name,
+    custom_model,
+    base_url,
+):
     """Run AI correction for one or more SRT files and return preview/diff/downloads."""
     srt_paths = normalize_srt_file_input(srt_files)
     if not srt_paths:
@@ -545,7 +558,7 @@ def run_llm_correction_for_files(srt_files, api_key, model_name, custom_model, b
                 srt_content=srt_content,
                 api_key=eff_api_key,
                 base_url=eff_base_url,
-                model=effective_model
+                model=effective_model,
             )
         except Exception as e:
             file_name = os.path.basename(srt_path)
@@ -890,7 +903,7 @@ with gr.Blocks(
                     api_key=api_key,
                     model_name=model_name,
                     custom_model=custom_model,
-                    base_url=base_url
+                    base_url=base_url,
                 )
                 
                 # Return results and make results group visible
@@ -981,10 +994,11 @@ with gr.Blocks(
                     gr.Markdown("---")
 
                     translate_en_btn = gr.Button(
-                        "🌐 Translate to English",
+                        "🌐 Translate to English (LLM, slower)",
                         variant="primary",
                         size="lg"
                     )
+                    gr.Markdown("ℹ️ English translation uses LLM and can be slower for long or multiple SRT files.")
 
                     translator_status = gr.Textbox(
                         label="Translation Status",
@@ -1180,7 +1194,7 @@ with gr.Blocks(
             # Connect English translate button
             translate_en_btn.click(
                 fn=lambda: (
-                    gr.update(interactive=False, value="⏳ Translating to English..."),
+                    gr.update(interactive=False, value="⏳ Translating to English (LLM)..."),
                     gr.update(value="⏳ Translating to English...")
                 ),
                 outputs=[translate_en_btn, translator_status]
@@ -1189,7 +1203,7 @@ with gr.Blocks(
                 inputs=[srt_input_file, srt_api_key_input, srt_model_dropdown, srt_custom_model_input, srt_base_url_input],
                 outputs=[original_srt_preview, translated_srt_preview, download_translated_srt, translator_state, translator_status]
             ).then(
-                fn=lambda: gr.update(interactive=True, value="🌐 Translate to English"),
+                fn=lambda: gr.update(interactive=True, value="🌐 Translate to English (LLM, slower)"),
                 outputs=[translate_en_btn]
             ).then(
                 fn=update_translated_output_hint,
@@ -1209,7 +1223,7 @@ with gr.Blocks(
                     api_key=api_key,
                     model_name=model_name,
                     custom_model=custom_model,
-                    base_url=base_url
+                    base_url=base_url,
                 )
                 return (
                     gr.update(visible=True),
