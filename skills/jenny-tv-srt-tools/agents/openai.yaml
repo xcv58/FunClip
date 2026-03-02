@@ -1,0 +1,4 @@
+interface:
+  display_name: "FunClip Gradio API"
+  short_description: "Call FunClip Gradio API for SRT workflows."
+  default_prompt: "Use $jenny-tv-srt-tools to call FunClip endpoints for transcription and SRT translation/correction at https://srt.xcv58.xyz/."
