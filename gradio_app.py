@@ -629,6 +629,68 @@ def update_translated_output_hint(translator_state):
     return gr.update(value=f"Using latest {kind} output from above ({count} file(s)).")
 
 
+def api_transcribe(file_path):
+    """API wrapper: transcribe audio/video file and return text + SRT."""
+    formatted_text, srt_content, srt_file_path, status_msg, _ = process_media(file_path, {})
+    return {
+        "text_markdown": formatted_text,
+        "srt_content": srt_content,
+        "srt_file_path": srt_file_path,
+        "status": status_msg,
+    }
+
+
+def api_srt_correct(srt_content, api_key, model_name, custom_model, base_url, return_traditional):
+    """API wrapper: AI-correct SRT text content."""
+    original, corrected, diff_html, orig_path, corr_path, trad_path, status_msg = run_llm_correction_for_content(
+        original_srt=srt_content,
+        base_name="subtitles",
+        api_key=api_key,
+        model_name=model_name,
+        custom_model=custom_model,
+        base_url=base_url,
+    )
+    result = {
+        "original_srt": original,
+        "corrected_srt": corrected,
+        "diff_html": diff_html,
+        "original_file_path": orig_path,
+        "corrected_file_path": corr_path,
+        "status": status_msg,
+    }
+    if return_traditional:
+        result["corrected_traditional_file_path"] = trad_path
+    return result
+
+
+def api_translate_srt_traditional(srt_files):
+    """API wrapper: convert SRT file(s) to Traditional Chinese."""
+    preview_original, preview_translated, download_path, _ = translate_srt_to_traditional(srt_files)
+    return {
+        "preview_original": preview_original,
+        "preview_translated": preview_translated,
+        "download_path": download_path,
+        "status": "✅ Translation to Traditional Chinese completed.",
+    }
+
+
+def api_translate_srt_english(srt_files, api_key, model_name, custom_model, base_url):
+    """API wrapper: translate SRT file(s) to English via LLM."""
+    preview_original, preview_translated, download_path, _ = translate_srt_to_english_fn(
+        srt_files=srt_files,
+        api_key=api_key,
+        model_name=model_name,
+        custom_model=custom_model,
+        base_url=base_url,
+    )
+    return {
+        "preview_original": preview_original,
+        "preview_translated": preview_translated,
+        "download_path": download_path,
+        "status": "✅ English translation completed.",
+    }
+
+
 with gr.Blocks(
     title="FunClip Pro - Gradio Edition",
     theme=gr.themes.Soft(
@@ -671,6 +733,73 @@ with gr.Blocks(
     
     # Per-session state to store filename and SRT (isolated per user session)
     session_state = gr.State(value={})
+
+    # Hidden API endpoints for gradio_client consumers (Codex/Claude scripts, etc.).
+    # These endpoints call stable wrappers and avoid UI-only chained button states.
+    with gr.Group(visible=False):
+        api_media_input = gr.File(file_types=["audio", "video"], file_count="single")
+        api_srt_files_input = gr.File(file_types=[".srt"], file_count="multiple")
+        api_srt_text_input = gr.TextArea()
+        api_api_key_input = gr.Textbox(type="password")
+        api_model_name_input = gr.Textbox(value="gpt-4o-mini")
+        api_custom_model_input = gr.Textbox()
+        api_base_url_input = gr.Textbox()
+        api_return_traditional_input = gr.Checkbox(value=True)
+
+        api_transcribe_output = gr.JSON()
+        api_correct_output = gr.JSON()
+        api_translate_trad_output = gr.JSON()
+        api_translate_en_output = gr.JSON()
+
+        api_transcribe_trigger = gr.Button("api_transcribe")
+        api_correct_trigger = gr.Button("api_srt_correct")
+        api_translate_trad_trigger = gr.Button("api_translate_traditional")
+        api_translate_en_trigger = gr.Button("api_translate_english")
+
+    api_transcribe_trigger.click(
+        fn=api_transcribe,
+        inputs=[api_media_input],
+        outputs=[api_transcribe_output],
+        api_name="transcribe",
+        api_description="Transcribe one audio/video file to text and SRT."
+    )
+
+    api_correct_trigger.click(
+        fn=api_srt_correct,
+        inputs=[
+            api_srt_text_input,
+            api_api_key_input,
+            api_model_name_input,
+            api_custom_model_input,
+            api_base_url_input,
+            api_return_traditional_input,
+        ],
+        outputs=[api_correct_output],
+        api_name="srt_correct",
+        api_description="AI-correct SRT content and optionally return Traditional Chinese file path."
+    )
+
+    api_translate_trad_trigger.click(
+        fn=api_translate_srt_traditional,
+        inputs=[api_srt_files_input],
+        outputs=[api_translate_trad_output],
+        api_name="srt_translate_traditional",
+        api_description="Convert uploaded SRT file(s) from Simplified Chinese to Traditional Chinese."
+    )
+
+    api_translate_en_trigger.click(
+        fn=api_translate_srt_english,
+        inputs=[
+            api_srt_files_input,
+            api_api_key_input,
+            api_model_name_input,
+            api_custom_model_input,
+            api_base_url_input,
+        ],
+        outputs=[api_translate_en_output],
+        api_name="srt_translate_english",
+        api_description="Translate uploaded SRT file(s) to English using LLM."
+    )
     
     with gr.Tabs():
         # --- TAB 1: TRANSCRIPTION ---
