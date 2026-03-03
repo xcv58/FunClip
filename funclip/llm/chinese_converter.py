@@ -8,6 +8,7 @@ from opencc import OpenCC
 # Keep selected terms in common modern usage after OpenCC conversion.
 POST_CONVERSION_OVERRIDES = {
     "喫": "吃",
+    "鬱": "郁",
 }
 
 
