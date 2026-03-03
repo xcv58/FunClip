@@ -5,6 +5,11 @@ Converts Simplified Chinese to Traditional Chinese.
 
 from opencc import OpenCC
 
+# Keep selected terms in common modern usage after OpenCC conversion.
+POST_CONVERSION_OVERRIDES = {
+    "喫": "吃",
+}
+
 
 def convert_to_traditional(text: str) -> str:
     """
@@ -21,4 +26,9 @@ def convert_to_traditional(text: str) -> str:
     
     # s2t = Simplified to Traditional
     converter = OpenCC('s2t')
-    return converter.convert(text)
+    converted_text = converter.convert(text)
+
+    for source, target in POST_CONVERSION_OVERRIDES.items():
+        converted_text = converted_text.replace(source, target)
+
+    return converted_text
