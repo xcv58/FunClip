@@ -10,6 +10,7 @@ POST_CONVERSION_OVERRIDES = {
     "喫": "吃",
     "鬱": "郁",
 }
+S2T_CONVERTER = OpenCC('s2t')
 
 
 def convert_to_traditional(text: str) -> str:
@@ -25,9 +26,7 @@ def convert_to_traditional(text: str) -> str:
     if not text:
         return text
     
-    # s2t = Simplified to Traditional
-    converter = OpenCC('s2t')
-    converted_text = converter.convert(text)
+    converted_text = S2T_CONVERTER.convert(text)
 
     for source, target in POST_CONVERSION_OVERRIDES.items():
         converted_text = converted_text.replace(source, target)

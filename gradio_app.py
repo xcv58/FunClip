@@ -5,6 +5,9 @@ import time
 import soundfile as sf
 import difflib
 import re
+import shutil
+import threading
+import uuid
 from dotenv import load_dotenv
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 import tempfile
@@ -42,6 +45,201 @@ print("✅ AI Model Ready")
 # --- 3. STATE ---
 # Note: Per-session state is now handled via gr.State() components
 # to support concurrent users without data conflicts
+ASYNC_JOB_TTL_SECONDS = int(os.getenv("FUNCLIP_ASYNC_JOB_TTL_SECONDS", "86400"))
+ASYNC_JOBS = {}
+ASYNC_JOBS_LOCK = threading.Lock()
+ASYNC_JOB_EXEC_LOCK = threading.Lock()
+
+
+def sanitize_base_name(raw_name):
+    """Sanitize a filename stem for safe temporary output paths."""
+    candidate = (raw_name or "subtitles").strip()
+    candidate = re.sub(r"[^0-9A-Za-z._-]+", "_", candidate)
+    candidate = candidate.strip("._-")
+    return candidate or "subtitles"
+
+
+def create_unique_srt_path(base_name, prefix="", suffix=".srt"):
+    """Create a unique temp file path for SRT output."""
+    safe_base = sanitize_base_name(base_name)
+    fd, file_path = tempfile.mkstemp(prefix=f"{prefix}{safe_base}_", suffix=suffix)
+    os.close(fd)
+    return file_path
+
+
+def get_media_duration_seconds(file_path, is_video):
+    """Best-effort media duration lookup for status/ETA reporting."""
+    duration_sec = 0
+    try:
+        if is_video:
+            import subprocess
+            result = subprocess.run(
+                ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                 '-of', 'default=noprint_wrappers=1:nokey=1', file_path],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                duration_sec = float(result.stdout.strip())
+        else:
+            import librosa
+            duration_sec = librosa.get_duration(path=file_path)
+    except Exception as e:
+        print(f"Could not determine duration: {e}")
+        duration_sec = 0
+    return duration_sec
+
+
+def estimate_transcribe_eta_seconds(duration_sec):
+    """Estimate transcribe ETA from media duration."""
+    if duration_sec <= 0:
+        return None
+    # Typical observed throughput on this setup is much faster than realtime.
+    return max(5.0, duration_sec / 45.0)
+
+
+def estimate_correction_eta_seconds(srt_content):
+    """Estimate correction ETA from subtitle text size."""
+    if not srt_content:
+        return None
+    # Rough heuristic tuned for network + LLM latency.
+    return max(15.0, len(srt_content) / 70.0)
+
+
+def prune_expired_async_jobs():
+    """Drop stale jobs to keep in-memory state bounded."""
+    now = time.time()
+    with ASYNC_JOBS_LOCK:
+        stale_ids = [
+            job_id for job_id, job in ASYNC_JOBS.items()
+            if now - job.get("updated_at", now) > ASYNC_JOB_TTL_SECONDS
+        ]
+        for job_id in stale_ids:
+            ASYNC_JOBS.pop(job_id, None)
+
+
+def create_async_job(operation):
+    """Create a queued async job record and return its id."""
+    prune_expired_async_jobs()
+    now = time.time()
+    job_id = str(uuid.uuid4())
+    job = {
+        "job_id": job_id,
+        "operation": operation,
+        "status": "queued",
+        "stage": "queued",
+        "progress": 0.0,
+        "eta_seconds": None,
+        "message": "Queued",
+        "created_at": now,
+        "updated_at": now,
+        "started_at": None,
+        "completed_at": None,
+        "result": None,
+        "error": "",
+    }
+    with ASYNC_JOBS_LOCK:
+        ASYNC_JOBS[job_id] = job
+    return job_id
+
+
+def update_async_job(job_id, **updates):
+    """Patch an async job record."""
+    with ASYNC_JOBS_LOCK:
+        job = ASYNC_JOBS.get(job_id)
+        if not job:
+            return False
+        job.update(updates)
+        job["updated_at"] = time.time()
+        return True
+
+
+def set_async_stage(job_id, stage, progress, message, eta_seconds=None):
+    """Update stage/progress for a running async job."""
+    update_async_job(
+        job_id,
+        status="running",
+        stage=stage,
+        progress=float(max(0.0, min(1.0, progress))),
+        eta_seconds=None if eta_seconds is None else max(0.0, float(eta_seconds)),
+        message=message,
+    )
+
+
+def complete_async_job(job_id, result, message="✅ Job completed."):
+    """Mark an async job as completed and store result payload."""
+    now = time.time()
+    update_async_job(
+        job_id,
+        status="completed",
+        stage="completed",
+        progress=1.0,
+        eta_seconds=0.0,
+        message=message,
+        completed_at=now,
+        result=result,
+        error="",
+    )
+
+
+def fail_async_job(job_id, error_message):
+    """Mark an async job as failed with normalized error details."""
+    now = time.time()
+    update_async_job(
+        job_id,
+        status="failed",
+        stage="failed",
+        progress=1.0,
+        eta_seconds=0.0,
+        message="❌ Job failed.",
+        completed_at=now,
+        error=error_message,
+    )
+
+
+def get_async_job_snapshot(job_id, include_result=False):
+    """Return a public snapshot for polling clients."""
+    prune_expired_async_jobs()
+    with ASYNC_JOBS_LOCK:
+        job = ASYNC_JOBS.get((job_id or "").strip())
+        if not job:
+            return {
+                "job_id": (job_id or "").strip(),
+                "status": "not_found",
+                "message": "Job id not found or expired.",
+            }
+
+        snapshot = {
+            "job_id": job.get("job_id"),
+            "operation": job.get("operation"),
+            "status": job.get("status"),
+            "stage": job.get("stage"),
+            "progress": job.get("progress"),
+            "eta_seconds": job.get("eta_seconds"),
+            "message": job.get("message"),
+            "error": job.get("error", ""),
+            "created_at": job.get("created_at"),
+            "updated_at": job.get("updated_at"),
+            "started_at": job.get("started_at"),
+            "completed_at": job.get("completed_at"),
+        }
+        if include_result and job.get("result") is not None:
+            snapshot["result"] = job.get("result")
+        return snapshot
+
+
+def stage_async_uploaded_file(file_path):
+    """Copy uploaded file to a stable temp path for background processing."""
+    if not file_path:
+        raise gr.Error("No file uploaded.")
+    source = str(file_path)
+    if not os.path.exists(source):
+        raise gr.Error(f"Uploaded file path does not exist: {source}")
+    base_name = sanitize_base_name(os.path.splitext(os.path.basename(source))[0])
+    _, ext = os.path.splitext(source)
+    fd, staged_path = tempfile.mkstemp(prefix=f"funclip_job_{base_name}_", suffix=ext)
+    os.close(fd)
+    shutil.copy2(source, staged_path)
+    return staged_path
 
 # --- 4. PROCESSING FUNCTIONS ---
 
@@ -55,7 +253,7 @@ def process_media(file_path, session_state, progress=gr.Progress()):
     
     # Get original filename for later use (stored in session state)
     original_name = os.path.basename(file_path)
-    base_name = os.path.splitext(original_name)[0]
+    base_name = sanitize_base_name(os.path.splitext(original_name)[0])
     session_state = session_state.copy() if session_state else {}
     session_state["original_filename"] = base_name
     
@@ -63,26 +261,7 @@ def process_media(file_path, session_state, progress=gr.Progress()):
     _, ext = os.path.splitext(file_path)
     is_video = ext.lower() in ['.mp4', '.avi', '.mkv', '.mov']
     
-    # Get duration based on file type
-    duration_sec = 0
-    try:
-        if is_video:
-            # Use subprocess to get video duration via ffprobe
-            import subprocess
-            result = subprocess.run(
-                ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', 
-                 '-of', 'default=noprint_wrappers=1:nokey=1', file_path],
-                capture_output=True, text=True
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                duration_sec = float(result.stdout.strip())
-        else:
-            # Use librosa for audio files
-            import librosa
-            duration_sec = librosa.get_duration(path=file_path)
-    except Exception as e:
-        print(f"Could not determine duration: {e}")
-        duration_sec = 0
+    duration_sec = get_media_duration_seconds(file_path, is_video)
     
     # Initialize Clipper
     audio_clipper = VideoClipper(funasr_model)
@@ -107,10 +286,8 @@ def process_media(file_path, session_state, progress=gr.Progress()):
     # Store SRT for correction feature (in session state)
     session_state["original_srt"] = res_srt
     
-    # Save SRT to temp file with proper filename (use system temp dir for Gradio compatibility)
-    srt_filename = f"{base_name}.srt"
-    temp_dir = tempfile.gettempdir()
-    srt_path = os.path.join(temp_dir, srt_filename)
+    # Save SRT to a unique temp file path to avoid cross-request collisions.
+    srt_path = create_unique_srt_path(base_name, prefix="transcribe_")
     with open(srt_path, 'w', encoding='utf-8') as f:
         f.write(res_srt)
     
@@ -296,18 +473,16 @@ def run_llm_correction_for_content(
     diff_html = generate_diff_html(original_srt, corrected_srt)
     traditional_srt = convert_to_traditional(corrected_srt)
 
-    safe_base = base_name if base_name else "subtitles"
-    temp_dir = tempfile.gettempdir()
-
-    orig_path = os.path.join(temp_dir, f"{safe_base}.srt")
+    safe_base = sanitize_base_name(base_name if base_name else "subtitles")
+    orig_path = create_unique_srt_path(safe_base, prefix="orig_")
     with open(orig_path, 'w', encoding='utf-8') as f:
         f.write(original_srt)
 
-    corr_path = os.path.join(temp_dir, f"corrected_{safe_base}.srt")
+    corr_path = create_unique_srt_path(safe_base, prefix="corrected_")
     with open(corr_path, 'w', encoding='utf-8') as f:
         f.write(corrected_srt)
 
-    trad_path = os.path.join(temp_dir, f"corrected_{safe_base}_traditional.srt")
+    trad_path = create_unique_srt_path(f"{safe_base}_traditional", prefix="corrected_")
     with open(trad_path, 'w', encoding='utf-8') as f:
         f.write(traditional_srt)
 
@@ -674,6 +849,38 @@ def api_translate_srt_traditional(srt_files):
     }
 
 
+def api_translate_srt_traditional_text(srt_files):
+    """API wrapper: convert SRT file(s) to Traditional Chinese and return text payload."""
+    srt_paths = normalize_srt_file_input(srt_files)
+    if not srt_paths:
+        raise gr.Error("Please upload SRT file(s).")
+
+    items = []
+    for srt_path in srt_paths:
+        with open(srt_path, 'r', encoding='utf-8') as f:
+            original_srt = f.read()
+        if not original_srt.strip():
+            continue
+
+        translated_srt = convert_to_traditional(original_srt)
+        items.append({
+            "file_name": os.path.basename(srt_path),
+            "translated_srt": translated_srt,
+        })
+
+    if not items:
+        raise gr.Error("All uploaded SRT files are empty.")
+
+    result = {
+        "count": len(items),
+        "items": items,
+        "status": f"✅ Translation to Traditional Chinese completed for {len(items)} file(s).",
+    }
+    if len(items) == 1:
+        result["translated_srt"] = items[0]["translated_srt"]
+    return result
+
+
 def api_translate_srt_english(srt_files, api_key, model_name, custom_model, base_url):
     """API wrapper: translate SRT file(s) to English via LLM."""
     preview_original, preview_translated, download_path, _ = translate_srt_to_english_fn(
@@ -689,6 +896,166 @@ def api_translate_srt_english(srt_files, api_key, model_name, custom_model, base
         "download_path": download_path,
         "status": "✅ English translation completed.",
     }
+
+
+def run_async_transcribe_and_correct_job(job_id, payload):
+    """Background worker for transcribe + correct pipeline."""
+    cleanup_paths = payload.get("cleanup_paths", [])
+    try:
+        with ASYNC_JOB_EXEC_LOCK:
+            media_path = payload["file_path"]
+            is_video = os.path.splitext(media_path)[1].lower() in ['.mp4', '.avi', '.mkv', '.mov']
+            duration_sec = get_media_duration_seconds(media_path, is_video)
+            set_async_stage(
+                job_id,
+                stage="transcribing",
+                progress=0.2,
+                message="Transcribing media to SRT...",
+                eta_seconds=estimate_transcribe_eta_seconds(duration_sec),
+            )
+            transcribe_res = api_transcribe(media_path)
+            srt_content = transcribe_res.get("srt_content", "")
+            if not isinstance(srt_content, str) or not srt_content.strip():
+                raise RuntimeError("Transcription returned empty SRT content.")
+
+            set_async_stage(
+                job_id,
+                stage="correcting",
+                progress=0.65,
+                message="Running AI auto-correction...",
+                eta_seconds=estimate_correction_eta_seconds(srt_content),
+            )
+            correct_res = api_srt_correct(
+                srt_content=srt_content,
+                api_key=payload.get("api_key", ""),
+                model_name=payload.get("model_name", "gpt-4o-mini"),
+                custom_model=payload.get("custom_model", ""),
+                base_url=payload.get("base_url", ""),
+                return_traditional=bool(payload.get("return_traditional", True)),
+            )
+            final_srt = correct_res.get("corrected_srt") or srt_content
+            complete_async_job(
+                job_id,
+                result={
+                    "transcribe": transcribe_res,
+                    "correct": correct_res,
+                    "final_srt": final_srt,
+                },
+                message="✅ Async transcribe + correction completed.",
+            )
+    except gr.Error as e:
+        fail_async_job(job_id, _normalize_error_message(e))
+    except Exception as e:
+        fail_async_job(job_id, _normalize_error_message(e))
+    finally:
+        for path in cleanup_paths:
+            try:
+                if path and os.path.exists(path):
+                    os.remove(path)
+            except Exception:
+                pass
+
+
+def run_async_srt_correct_job(job_id, payload):
+    """Background worker for correction-only pipeline."""
+    try:
+        with ASYNC_JOB_EXEC_LOCK:
+            srt_content = payload.get("srt_content", "")
+            if not isinstance(srt_content, str) or not srt_content.strip():
+                raise RuntimeError("No SRT content found for correction.")
+
+            set_async_stage(
+                job_id,
+                stage="correcting",
+                progress=0.35,
+                message="Running AI auto-correction...",
+                eta_seconds=estimate_correction_eta_seconds(srt_content),
+            )
+            correct_res = api_srt_correct(
+                srt_content=srt_content,
+                api_key=payload.get("api_key", ""),
+                model_name=payload.get("model_name", "gpt-4o-mini"),
+                custom_model=payload.get("custom_model", ""),
+                base_url=payload.get("base_url", ""),
+                return_traditional=bool(payload.get("return_traditional", True)),
+            )
+            final_srt = correct_res.get("corrected_srt") or srt_content
+            complete_async_job(
+                job_id,
+                result={
+                    "correct": correct_res,
+                    "final_srt": final_srt,
+                },
+                message="✅ Async correction completed.",
+            )
+    except gr.Error as e:
+        fail_async_job(job_id, _normalize_error_message(e))
+    except Exception as e:
+        fail_async_job(job_id, _normalize_error_message(e))
+
+
+def start_async_worker(job_id, target_fn, payload):
+    """Start a daemon thread for a queued async job."""
+    def _runner():
+        update_async_job(
+            job_id,
+            status="running",
+            stage="starting",
+            progress=0.05,
+            eta_seconds=None,
+            message="Starting async worker...",
+            started_at=time.time(),
+        )
+        target_fn(job_id, payload)
+
+    thread = threading.Thread(target=_runner, daemon=True)
+    thread.start()
+
+
+def api_submit_transcribe_and_correct(file_path, api_key, model_name, custom_model, base_url, return_traditional):
+    """Submit async transcribe+correct job and return job id for polling."""
+    staged_media_path = stage_async_uploaded_file(file_path)
+    job_id = create_async_job("transcribe_and_correct")
+    payload = {
+        "file_path": staged_media_path,
+        "api_key": api_key,
+        "model_name": model_name,
+        "custom_model": custom_model,
+        "base_url": base_url,
+        "return_traditional": return_traditional,
+        "cleanup_paths": [staged_media_path],
+    }
+    start_async_worker(job_id, run_async_transcribe_and_correct_job, payload)
+    snapshot = get_async_job_snapshot(job_id, include_result=False)
+    snapshot["poll_api_name"] = "/async_job_status"
+    return snapshot
+
+
+def api_submit_srt_correct(srt_content, api_key, model_name, custom_model, base_url, return_traditional):
+    """Submit async correction-only job and return job id for polling."""
+    if not srt_content or not srt_content.strip():
+        raise gr.Error("No SRT content provided.")
+
+    job_id = create_async_job("srt_correct")
+    payload = {
+        "srt_content": srt_content,
+        "api_key": api_key,
+        "model_name": model_name,
+        "custom_model": custom_model,
+        "base_url": base_url,
+        "return_traditional": return_traditional,
+    }
+    start_async_worker(job_id, run_async_srt_correct_job, payload)
+    snapshot = get_async_job_snapshot(job_id, include_result=False)
+    snapshot["poll_api_name"] = "/async_job_status"
+    return snapshot
+
+
+def api_async_job_status(job_id, include_result):
+    """Poll async job status/result."""
+    if not job_id or not str(job_id).strip():
+        raise gr.Error("job_id is required.")
+    return get_async_job_snapshot(job_id, include_result=bool(include_result))
 
 
 with gr.Blocks(
@@ -740,21 +1107,31 @@ with gr.Blocks(
         api_media_input = gr.File(file_types=["audio", "video"], file_count="single")
         api_srt_files_input = gr.File(file_types=[".srt"], file_count="multiple")
         api_srt_text_input = gr.TextArea()
+        api_job_id_input = gr.Textbox()
         api_api_key_input = gr.Textbox(type="password")
         api_model_name_input = gr.Textbox(value="gpt-4o-mini")
         api_custom_model_input = gr.Textbox()
         api_base_url_input = gr.Textbox()
         api_return_traditional_input = gr.Checkbox(value=True)
+        api_include_result_input = gr.Checkbox(value=False)
 
         api_transcribe_output = gr.JSON()
         api_correct_output = gr.JSON()
         api_translate_trad_output = gr.JSON()
+        api_translate_trad_text_output = gr.JSON()
         api_translate_en_output = gr.JSON()
+        api_submit_transcribe_correct_output = gr.JSON()
+        api_submit_correct_output = gr.JSON()
+        api_async_status_output = gr.JSON()
 
         api_transcribe_trigger = gr.Button("api_transcribe")
         api_correct_trigger = gr.Button("api_srt_correct")
         api_translate_trad_trigger = gr.Button("api_translate_traditional")
+        api_translate_trad_text_trigger = gr.Button("api_translate_traditional_text")
         api_translate_en_trigger = gr.Button("api_translate_english")
+        api_submit_transcribe_correct_trigger = gr.Button("api_submit_transcribe_and_correct")
+        api_submit_correct_trigger = gr.Button("api_submit_srt_correct")
+        api_async_status_trigger = gr.Button("api_async_job_status")
 
     api_transcribe_trigger.click(
         fn=api_transcribe,
@@ -787,6 +1164,14 @@ with gr.Blocks(
         api_description="Convert uploaded SRT file(s) from Simplified Chinese to Traditional Chinese."
     )
 
+    api_translate_trad_text_trigger.click(
+        fn=api_translate_srt_traditional_text,
+        inputs=[api_srt_files_input],
+        outputs=[api_translate_trad_text_output],
+        api_name="srt_translate_traditional_text",
+        api_description="Convert uploaded SRT file(s) to Traditional Chinese and return translated text in JSON."
+    )
+
     api_translate_en_trigger.click(
         fn=api_translate_srt_english,
         inputs=[
@@ -799,6 +1184,44 @@ with gr.Blocks(
         outputs=[api_translate_en_output],
         api_name="srt_translate_english",
         api_description="Translate uploaded SRT file(s) to English using LLM."
+    )
+
+    api_submit_transcribe_correct_trigger.click(
+        fn=api_submit_transcribe_and_correct,
+        inputs=[
+            api_media_input,
+            api_api_key_input,
+            api_model_name_input,
+            api_custom_model_input,
+            api_base_url_input,
+            api_return_traditional_input,
+        ],
+        outputs=[api_submit_transcribe_correct_output],
+        api_name="submit_transcribe_and_correct",
+        api_description="Submit async transcribe+correct job. Poll job status using /async_job_status."
+    )
+
+    api_submit_correct_trigger.click(
+        fn=api_submit_srt_correct,
+        inputs=[
+            api_srt_text_input,
+            api_api_key_input,
+            api_model_name_input,
+            api_custom_model_input,
+            api_base_url_input,
+            api_return_traditional_input,
+        ],
+        outputs=[api_submit_correct_output],
+        api_name="submit_srt_correct",
+        api_description="Submit async SRT correction job. Poll job status using /async_job_status."
+    )
+
+    api_async_status_trigger.click(
+        fn=api_async_job_status,
+        inputs=[api_job_id_input, api_include_result_input],
+        outputs=[api_async_status_output],
+        api_name="async_job_status",
+        api_description="Poll async job status by job_id. Set include_result=true to include completed payload."
     )
     
     with gr.Tabs():
@@ -879,7 +1302,8 @@ with gr.Blocks(
             input_file.change(
                 fn=update_preview,
                 inputs=[input_file],
-                outputs=[video_preview, audio_preview]
+                outputs=[video_preview, audio_preview],
+                api_visibility="private",
             )
             
             # Note: process_btn click handler is connected below, after correct_btn is defined
@@ -905,7 +1329,8 @@ with gr.Blocks(
             transcription_correction_source.change(
                 fn=update_srt_upload_visibility,
                 inputs=[transcription_correction_source],
-                outputs=[transcription_correction_upload]
+                outputs=[transcription_correction_upload],
+                api_visibility="private",
             )
             
             # LLM Settings in collapsible accordion
@@ -942,7 +1367,8 @@ with gr.Blocks(
             model_dropdown.change(
                 fn=update_custom_model_visibility,
                 inputs=[model_dropdown],
-                outputs=[custom_model_input]
+                outputs=[custom_model_input],
+                api_visibility="private",
             )
             
             correct_btn = gr.Button(
@@ -955,14 +1381,17 @@ with gr.Blocks(
             # Now connect the process_btn click handler (after correct_btn is defined)
             process_btn.click(
                 fn=lambda: gr.update(interactive=False, value="⏳ Processing..."),
-                outputs=[process_btn]
+                outputs=[process_btn],
+                api_visibility="private",
             ).then(
                 fn=process_media,
                 inputs=[input_file, session_state],
-                outputs=[output_text, output_srt, download_srt, status_display, session_state]
+                outputs=[output_text, output_srt, download_srt, status_display, session_state],
+                api_visibility="private",
             ).then(
                 fn=lambda: gr.update(interactive=True, value="🚀 Start Processing"),
-                outputs=[process_btn]
+                outputs=[process_btn],
+                api_visibility="private",
             )
             
             # Results Section (only shows after correction is run)
@@ -1080,7 +1509,8 @@ with gr.Blocks(
             
             correct_btn.click(
                 fn=lambda: gr.update(interactive=False, value="⏳ Correcting..."),
-                outputs=[correct_btn]
+                outputs=[correct_btn],
+                api_visibility="private",
             ).then(
                 fn=safe_correction_wrapper,
                 inputs=[
@@ -1092,10 +1522,12 @@ with gr.Blocks(
                     transcription_correction_source,
                     transcription_correction_upload
                 ],
-                outputs=[correction_results, correction_status, original_display, corrected_display, diff_view, download_original, download_corrected, download_traditional]
+                outputs=[correction_results, correction_status, original_display, corrected_display, diff_view, download_original, download_corrected, download_traditional],
+                api_visibility="private",
             ).then(
                 fn=lambda: gr.update(interactive=True, value="✨ Run Auto Correction"),
-                outputs=[correct_btn]
+                outputs=[correct_btn],
+                api_visibility="private",
             )
         
         # --- TAB 2: SRT TRANSLATOR ---
@@ -1162,7 +1594,8 @@ with gr.Blocks(
                     srt_model_dropdown.change(
                         fn=update_custom_model_visibility,
                         inputs=[srt_model_dropdown],
-                        outputs=[srt_custom_model_input]
+                        outputs=[srt_custom_model_input],
+                        api_visibility="private",
                     )
 
                     gr.Markdown("### 📥 Download")
@@ -1223,7 +1656,8 @@ with gr.Blocks(
             translator_correction_source.change(
                 fn=update_srt_upload_visibility,
                 inputs=[translator_correction_source],
-                outputs=[translator_correction_upload]
+                outputs=[translator_correction_upload],
+                api_visibility="private",
             )
 
             with gr.Accordion("⚙️ LLM Settings (for AI correction)", open=False):
@@ -1252,7 +1686,8 @@ with gr.Blocks(
             translator_corr_model_dropdown.change(
                 fn=update_custom_model_visibility,
                 inputs=[translator_corr_model_dropdown],
-                outputs=[translator_corr_custom_model_input]
+                outputs=[translator_corr_custom_model_input],
+                api_visibility="private",
             )
 
             translator_correct_btn = gr.Button(
@@ -1306,18 +1741,22 @@ with gr.Blocks(
                     gr.update(interactive=False, value="⏳ Translating..."),
                     gr.update(value="⏳ Translating to Traditional Chinese...")
                 ),
-                outputs=[translate_btn, translator_status]
+                outputs=[translate_btn, translator_status],
+                api_visibility="private",
             ).then(
                 fn=safe_translate_traditional_wrapper,
                 inputs=[srt_input_file],
-                outputs=[original_srt_preview, translated_srt_preview, download_translated_srt, translator_state, translator_status]
+                outputs=[original_srt_preview, translated_srt_preview, download_translated_srt, translator_state, translator_status],
+                api_visibility="private",
             ).then(
                 fn=lambda: gr.update(interactive=True, value="🔄 Translate to Traditional Chinese (繁體)"),
-                outputs=[translate_btn]
+                outputs=[translate_btn],
+                api_visibility="private",
             ).then(
                 fn=update_translated_output_hint,
                 inputs=[translator_state],
-                outputs=[translator_stream_hint]
+                outputs=[translator_stream_hint],
+                api_visibility="private",
             )
 
             # Connect English translate button
@@ -1326,18 +1765,22 @@ with gr.Blocks(
                     gr.update(interactive=False, value="⏳ Translating to English (LLM)..."),
                     gr.update(value="⏳ Translating to English...")
                 ),
-                outputs=[translate_en_btn, translator_status]
+                outputs=[translate_en_btn, translator_status],
+                api_visibility="private",
             ).then(
                 fn=safe_translate_english_wrapper,
                 inputs=[srt_input_file, srt_api_key_input, srt_model_dropdown, srt_custom_model_input, srt_base_url_input],
-                outputs=[original_srt_preview, translated_srt_preview, download_translated_srt, translator_state, translator_status]
+                outputs=[original_srt_preview, translated_srt_preview, download_translated_srt, translator_state, translator_status],
+                api_visibility="private",
             ).then(
                 fn=lambda: gr.update(interactive=True, value="🌐 Translate to English (LLM, slower)"),
-                outputs=[translate_en_btn]
+                outputs=[translate_en_btn],
+                api_visibility="private",
             ).then(
                 fn=update_translated_output_hint,
                 inputs=[translator_state],
-                outputs=[translator_stream_hint]
+                outputs=[translator_stream_hint],
+                api_visibility="private",
             )
 
             # Function to run translator correction and show results
@@ -1392,7 +1835,8 @@ with gr.Blocks(
 
             translator_correct_btn.click(
                 fn=lambda: gr.update(interactive=False, value="⏳ Correcting..."),
-                outputs=[translator_correct_btn]
+                outputs=[translator_correct_btn],
+                api_visibility="private",
             ).then(
                 fn=safe_translator_correction_wrapper,
                 inputs=[
@@ -1412,10 +1856,12 @@ with gr.Blocks(
                     translator_diff_view,
                     translator_download_original,
                     translator_download_corrected
-                ]
+                ],
+                api_visibility="private",
             ).then(
                 fn=lambda: gr.update(interactive=True, value="✨ Run Auto Correction"),
-                outputs=[translator_correct_btn]
+                outputs=[translator_correct_btn],
+                api_visibility="private",
             )
 
     # Footer
