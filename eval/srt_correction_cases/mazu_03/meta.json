@@ -1,0 +1,14 @@
+{
+  "case_id": "mazu_03",
+  "lang": "zh",
+  "media_mode": "video",
+  "source_media_path": "/Users/xcv58/work/Footage/\u5abd\u7956 03/\u5927\u7532\u5abd\u7956\u9076\u5883 01-3.mov",
+  "source_gold_srt_path": "/Users/xcv58/work/Footage/\u5abd\u7956 03/captions (96).srt",
+  "copied_media_path": null,
+  "generated_input_srt": true,
+  "input_srt_path": "/Users/xcv58/work/FunClip/eval/srt_correction_cases/mazu_03/original_transcribed.srt",
+  "gold_srt_path": "/Users/xcv58/work/FunClip/eval/srt_correction_cases/mazu_03/final_traditional.srt",
+  "raw_text_path": "/Users/xcv58/work/FunClip/eval/srt_correction_cases/mazu_03/raw_text.txt",
+  "generated_at": "2026-04-06T04:29:52.524141+00:00",
+  "asr_device": null
+}

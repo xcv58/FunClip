@@ -128,6 +128,31 @@ A practical default rule:
    - per-file failures
    - worst disagreement cases for manual review
 
+## Fixture builder
+
+If you already have:
+
+- the original audio/video file
+- the final corrected SRT you want to treat as gold
+
+you can generate the raw pre-correction SRT fixture with:
+
+```bash
+python3 scripts/build_srt_eval_case.py \
+  --media /absolute/path/input.mp4 \
+  --gold-srt /absolute/path/final.srt \
+  --case-id sample_case_001
+```
+
+That creates:
+
+- `eval/srt_correction_cases/sample_case_001/original_transcribed.srt`
+- `eval/srt_correction_cases/sample_case_001/final_traditional.srt`
+- `eval/srt_correction_cases/sample_case_001/raw_text.txt`
+- `eval/srt_correction_cases/sample_case_001/meta.json`
+
+Use `--copy-media` if you also want the source media stored with the case.
+
 ## First benchmark to run
 
 Run this small experiment first:

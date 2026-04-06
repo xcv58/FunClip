@@ -1,0 +1,14 @@
+{
+  "case_id": "fire_01",
+  "lang": "zh",
+  "media_mode": "video",
+  "source_media_path": "/Users/xcv58/work/Footage/FIRE-01/\u5f9e\u7f8e\u570b\u642c\u53bb\u53f0\u7063\u9000\u4f11FIRE 01.mov",
+  "source_gold_srt_path": "/Users/xcv58/work/Footage/FIRE-01/captions (94).srt",
+  "copied_media_path": null,
+  "generated_input_srt": true,
+  "input_srt_path": "/Users/xcv58/work/FunClip/eval/srt_correction_cases/fire_01/original_transcribed.srt",
+  "gold_srt_path": "/Users/xcv58/work/FunClip/eval/srt_correction_cases/fire_01/final_traditional.srt",
+  "raw_text_path": "/Users/xcv58/work/FunClip/eval/srt_correction_cases/fire_01/raw_text.txt",
+  "generated_at": "2026-04-06T04:22:36.709638+00:00",
+  "asr_device": null
+}
