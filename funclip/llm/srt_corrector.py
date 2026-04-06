@@ -33,7 +33,7 @@ def build_correction_prompt():
     )
 
 
-def correct_srt_content(srt_content, api_key=None, base_url=None, model="gpt-5-mini"):
+def correct_srt_content(srt_content, api_key=None, base_url=None, model="gpt-4o-mini"):
     """
     Corrects typos and mixed language errors in SRT content using an LLM.
     
@@ -41,7 +41,7 @@ def correct_srt_content(srt_content, api_key=None, base_url=None, model="gpt-5-m
         srt_content (str): The raw SRT content to correct.
         api_key (str, optional): API key for the LLM provider. Defaults to None (uses env var).
         base_url (str, optional): Base URL for the LLM provider. Defaults to None.
-        model (str, optional): Model to use. Defaults to "gpt-5-mini".
+        model (str, optional): Model to use. Defaults to "gpt-4o-mini".
         
     Returns:
         str: The corrected SRT content.

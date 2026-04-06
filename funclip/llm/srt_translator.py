@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def translate_srt_to_english(srt_content, api_key=None, base_url=None, model="gpt-5-mini"):
+def translate_srt_to_english(srt_content, api_key=None, base_url=None, model="gpt-4o-mini"):
     """
     Translate SRT subtitles from Simplified Chinese to English using an LLM.
 
