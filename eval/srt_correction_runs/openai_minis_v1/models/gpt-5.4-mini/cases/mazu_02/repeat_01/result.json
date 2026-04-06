@@ -1,0 +1,54 @@
+{
+  "status": "completed",
+  "suite_name": "openai_minis_v1",
+  "case_id": "mazu_02",
+  "repeat_index": 1,
+  "requested_model": "gpt-5.4-mini",
+  "resolved_model": "gpt-5.4-mini-2026-03-17",
+  "response_id": "chatcmpl-DRWeqyM2OlMR0a7KEhj6hRbNa80YL",
+  "latency_seconds": 36.71976270806044,
+  "started_at": "2026-04-06T05:19:24.224792+00:00",
+  "completed_at": "2026-04-06T05:20:01.029594+00:00",
+  "usage": {
+    "completion_tokens": 8353,
+    "prompt_tokens": 8650,
+    "total_tokens": 17003,
+    "completion_tokens_details": {
+      "accepted_prediction_tokens": 0,
+      "audio_tokens": 0,
+      "reasoning_tokens": 0,
+      "rejected_prediction_tokens": 0,
+      "text_tokens": null,
+      "image_tokens": null
+    },
+    "prompt_tokens_details": {
+      "audio_tokens": 0,
+      "cached_tokens": 0,
+      "text_tokens": null,
+      "image_tokens": null
+    }
+  },
+  "metrics": {
+    "output_parse_ok": true,
+    "output_parse_error": null,
+    "same_segment_count": true,
+    "same_indices": true,
+    "same_timestamps": true,
+    "hard_gate_pass": true,
+    "exact_match_gold": false,
+    "exact_match_input": false,
+    "char_edit_distance_input_to_output": 27,
+    "char_edit_distance_input_to_gold": 13461,
+    "char_edit_distance_output_to_gold": 13453,
+    "estimated_cost_usd": null,
+    "prompt_tokens": 8650,
+    "completion_tokens": 8353,
+    "total_tokens": 17003
+  },
+  "input_path": "/Users/xcv58/work/FunClip/eval/srt_correction_cases/mazu_02/original_transcribed.srt",
+  "gold_path": "/Users/xcv58/work/FunClip/eval/srt_correction_cases/mazu_02/final_traditional.srt",
+  "output_path": "/Users/xcv58/work/FunClip/eval/srt_correction_runs/openai_minis_v1/models/gpt-5.4-mini/cases/mazu_02/repeat_01/corrected.srt",
+  "result_path": "/Users/xcv58/work/FunClip/eval/srt_correction_runs/openai_minis_v1/models/gpt-5.4-mini/cases/mazu_02/repeat_01/result.json",
+  "prompt_sha256": "d9a26a6323062462444498ee02775a21fb1e2df005738c4d6d61007d8d64de70",
+  "reasoning_effort": null
+}

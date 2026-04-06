@@ -128,6 +128,46 @@ A practical default rule:
    - per-file failures
    - worst disagreement cases for manual review
 
+## Resumable benchmark runner
+
+Use the cached runner to compare models without rerunning completed results:
+
+```bash
+venv/bin/python scripts/eval_srt_correction.py \
+  --suite-name baseline_v1 \
+  --models gpt-4o-mini gpt-5-mini gpt-5.4-mini \
+  --repeats 1
+```
+
+Results are stored under:
+
+- `eval/srt_correction_runs/baseline_v1/models/<model>/cases/<case_id>/repeat_01/corrected.srt`
+- `eval/srt_correction_runs/baseline_v1/models/<model>/cases/<case_id>/repeat_01/result.json`
+- `eval/srt_correction_runs/baseline_v1/summary.json`
+- `eval/srt_correction_runs/baseline_v1/results.csv`
+- `eval/srt_correction_runs/baseline_v1/report.md`
+
+Important behavior:
+
+- completed `model x case x repeat` results are skipped automatically on later runs
+- adding a new model only evaluates the missing model folders
+- rerunning the same suite name rebuilds summaries from all stored results already on disk
+- use `--force` only if you explicitly want to overwrite cached results
+
+Recommended incremental workflow:
+
+```bash
+# First run the cheaper baseline pair
+venv/bin/python scripts/eval_srt_correction.py \
+  --suite-name baseline_v1 \
+  --models gpt-4o-mini gpt-5-mini
+
+# Later add one more model without rerunning the completed cells
+venv/bin/python scripts/eval_srt_correction.py \
+  --suite-name baseline_v1 \
+  --models gpt-5.4-mini
+```
+
 ## Fixture builder
 
 If you already have:

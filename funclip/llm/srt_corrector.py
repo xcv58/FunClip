@@ -33,6 +33,77 @@ def build_correction_prompt():
     )
 
 
+def make_json_safe(value):
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(key): make_json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [make_json_safe(item) for item in value]
+    if hasattr(value, "model_dump"):
+        return make_json_safe(value.model_dump())
+    if hasattr(value, "dict"):
+        return make_json_safe(value.dict())
+    if hasattr(value, "__dict__"):
+        return make_json_safe(vars(value))
+    return str(value)
+
+
+def request_srt_correction(srt_content, api_key=None, base_url=None, model="gpt-4o-mini", **kwargs):
+    """
+    Sends an SRT correction request and returns both the corrected content and
+    response metadata for evaluation/reporting.
+
+    Args:
+        srt_content (str): The raw SRT content to correct.
+        api_key (str, optional): API key for the LLM provider. Defaults to None (uses env var).
+        base_url (str, optional): Base URL for the LLM provider. Defaults to None.
+        model (str, optional): Model to use. Defaults to "gpt-4o-mini".
+        **kwargs: Extra provider/model arguments forwarded to LiteLLM.
+
+    Returns:
+        dict: A payload containing corrected_content, usage, model, and raw response metadata.
+    """
+    system_prompt = build_correction_prompt()
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": srt_content},
+    ]
+
+    try:
+        logging.info("Sending SRT correction request to LLM (Model: %s)", model)
+
+        request_kwargs = {
+            "model": model,
+            "messages": messages,
+        }
+
+        if api_key:
+            request_kwargs["api_key"] = api_key
+        if base_url:
+            request_kwargs["base_url"] = base_url
+
+        request_kwargs.update(kwargs)
+
+        response = completion(**request_kwargs)
+        corrected_content = response.choices[0].message.content.strip()
+        usage = response.get("usage") if hasattr(response, "get") else getattr(response, "usage", None)
+
+        return {
+            "corrected_content": corrected_content,
+            "requested_model": model,
+            "resolved_model": response.get("model") if hasattr(response, "get") else getattr(response, "model", model),
+            "usage": make_json_safe(usage),
+            "messages": messages,
+            "response_id": response.get("id") if hasattr(response, "get") else getattr(response, "id", None),
+        }
+
+    except Exception as e:
+        logging.error("Error during SRT correction: %s", e)
+        raise e
+
+
 def correct_srt_content(srt_content, api_key=None, base_url=None, model="gpt-4o-mini"):
     """
     Corrects typos and mixed language errors in SRT content using an LLM.
@@ -46,36 +117,10 @@ def correct_srt_content(srt_content, api_key=None, base_url=None, model="gpt-4o-
     Returns:
         str: The corrected SRT content.
     """
-    system_prompt = build_correction_prompt()
-    
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": srt_content}
-    ]
-    
-    try:
-        logging.info(
-            "Sending SRT correction request to LLM "
-            f"(Model: {model})"
-        )
-        
-        # litellm handles reading api_key from os.environ if not passed explicitly,
-        # but if we pass it explicitly it uses that.
-        kwargs = {
-            "model": model,
-            "messages": messages,
-        }
-        
-        if api_key:
-            kwargs["api_key"] = api_key
-        if base_url:
-            kwargs["base_url"] = base_url
-            
-        response = completion(**kwargs)
-        
-        corrected_content = response.choices[0].message.content
-        return corrected_content.strip()
-        
-    except Exception as e:
-        logging.error(f"Error during SRT correction: {e}")
-        raise e
+    result = request_srt_correction(
+        srt_content=srt_content,
+        api_key=api_key,
+        base_url=base_url,
+        model=model,
+    )
+    return result["corrected_content"]
