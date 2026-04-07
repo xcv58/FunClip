@@ -1,0 +1,53 @@
+{
+  "models": {
+    "gpt-4o-mini": {
+      "completed_results": 5,
+      "repeats_used": [
+        2
+      ],
+      "hard_gate_pass_rate": 0.8,
+      "mean_reading_text_similarity_output_to_gold": 0.8436684372730536,
+      "mean_reading_text_progress_ratio": 0.06292325532798106,
+      "positive_reading_text_progress_rate": 1.0,
+      "median_latency_seconds": 139.39674212504178,
+      "total_estimated_cost_usd": 0.02815365
+    },
+    "gpt-5-mini": {
+      "completed_results": 5,
+      "repeats_used": [
+        1
+      ],
+      "hard_gate_pass_rate": 1.0,
+      "mean_reading_text_similarity_output_to_gold": 0.8392244000612751,
+      "mean_reading_text_progress_ratio": -0.031170464228682335,
+      "positive_reading_text_progress_rate": 0.6,
+      "median_latency_seconds": 181.3048256249167,
+      "total_estimated_cost_usd": 0.1282115
+    },
+    "gpt-5.4-mini": {
+      "completed_results": 5,
+      "repeats_used": [
+        1
+      ],
+      "hard_gate_pass_rate": 1.0,
+      "mean_reading_text_similarity_output_to_gold": 0.8430512908854936,
+      "mean_reading_text_progress_ratio": 0.026749330319772308,
+      "positive_reading_text_progress_rate": 0.6,
+      "median_latency_seconds": 33.160441166954115,
+      "total_estimated_cost_usd": 0.197139
+    },
+    "ollama_chat/gemma4": {
+      "completed_results": 5,
+      "repeats_used": [
+        1
+      ],
+      "hard_gate_pass_rate": 1.0,
+      "mean_reading_text_similarity_output_to_gold": 0.8350995490582648,
+      "mean_reading_text_progress_ratio": 0.005211694271299126,
+      "positive_reading_text_progress_rate": 0.4,
+      "median_latency_seconds": 353.77831174992025,
+      "total_estimated_cost_usd": 0.0
+    }
+  },
+  "result_count": 20
+}

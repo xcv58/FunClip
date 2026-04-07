@@ -1,8 +1,8 @@
 {
-  "updated_at": "2026-04-06T20:20:54.361967+00:00",
+  "updated_at": "2026-04-06T18:20:24.142184+00:00",
   "models": {
     "gpt-4o-mini": {
-      "completed_results": 10,
+      "completed_results": 5,
       "cases_covered": [
         "fire_01",
         "mazu_02",
@@ -12,17 +12,17 @@
       ],
       "exact_match_rate": 0.0,
       "hard_gate_pass_rate": 0.8,
-      "mean_text_only_similarity_output_to_gold": 0.6928741627562313,
-      "mean_text_only_progress_ratio": 0.029000488571725793,
+      "mean_text_only_similarity_output_to_gold": 0.8325268800769086,
+      "mean_text_only_progress_ratio": 0.05280820965803063,
       "positive_text_progress_rate": 0.8,
       "gold_editorial_delta_rate": 1.0,
-      "latency_sample_count": 6,
-      "median_latency_seconds": 157.20276372949593,
-      "p95_latency_seconds": 190.95150182343787,
-      "mean_char_edit_distance_output_to_gold": 11679.6,
-      "total_prompt_tokens": 77670,
-      "total_completion_tokens": 74442,
-      "total_estimated_cost_usd": 0.056315699999999996
+      "latency_sample_count": 1,
+      "median_latency_seconds": 175.00878533395007,
+      "p95_latency_seconds": 175.00878533395007,
+      "mean_char_edit_distance_output_to_gold": 11225.8,
+      "total_prompt_tokens": 38835,
+      "total_completion_tokens": 37228,
+      "total_estimated_cost_usd": 0.02816205
     },
     "gpt-5-mini": {
       "completed_results": 5,
@@ -35,14 +35,14 @@
       ],
       "exact_match_rate": 0.0,
       "hard_gate_pass_rate": 1.0,
-      "mean_text_only_similarity_output_to_gold": 0.5521602751653847,
-      "mean_text_only_progress_ratio": -0.00302713169835185,
-      "positive_text_progress_rate": 0.4,
+      "mean_text_only_similarity_output_to_gold": 0.8285545766489718,
+      "mean_text_only_progress_ratio": -0.031704131585574634,
+      "positive_text_progress_rate": 0.6,
       "gold_editorial_delta_rate": 1.0,
       "latency_sample_count": 5,
       "median_latency_seconds": 181.3048256249167,
       "p95_latency_seconds": 211.14582526641897,
-      "mean_char_edit_distance_output_to_gold": 12186.6,
+      "mean_char_edit_distance_output_to_gold": 11265.2,
       "total_prompt_tokens": 38830,
       "total_completion_tokens": 59252,
       "total_estimated_cost_usd": 0.1282115
@@ -58,40 +58,17 @@
       ],
       "exact_match_rate": 0.0,
       "hard_gate_pass_rate": 1.0,
-      "mean_text_only_similarity_output_to_gold": 0.552836522123223,
-      "mean_text_only_progress_ratio": 0.012251169298271702,
+      "mean_text_only_similarity_output_to_gold": 0.8327269982677653,
+      "mean_text_only_progress_ratio": 0.024348641677553344,
       "positive_text_progress_rate": 0.6,
       "gold_editorial_delta_rate": 1.0,
       "latency_sample_count": 5,
       "median_latency_seconds": 33.160441166954115,
       "p95_latency_seconds": 36.33615281644743,
-      "mean_char_edit_distance_output_to_gold": 12198.6,
+      "mean_char_edit_distance_output_to_gold": 11263.6,
       "total_prompt_tokens": 38830,
       "total_completion_tokens": 37337,
       "total_estimated_cost_usd": 0.197139
-    },
-    "ollama_chat/gemma4": {
-      "completed_results": 5,
-      "cases_covered": [
-        "fire_01",
-        "mazu_02",
-        "mazu_03",
-        "mazu_04",
-        "mazu_05"
-      ],
-      "exact_match_rate": 0.0,
-      "hard_gate_pass_rate": 1.0,
-      "mean_text_only_similarity_output_to_gold": 0.8248955407259589,
-      "mean_text_only_progress_ratio": 0.0057991026992352665,
-      "positive_text_progress_rate": 0.6,
-      "gold_editorial_delta_rate": 1.0,
-      "latency_sample_count": 5,
-      "median_latency_seconds": 353.77831174992025,
-      "p95_latency_seconds": 395.72395562501623,
-      "mean_char_edit_distance_output_to_gold": 11278.4,
-      "total_prompt_tokens": 52896,
-      "total_completion_tokens": 56924,
-      "total_estimated_cost_usd": 0.0
     },
     "openai/gemma": {
       "completed_results": 3,
@@ -115,5 +92,5 @@
       "total_estimated_cost_usd": null
     }
   },
-  "result_count": 28
+  "result_count": 18
 }

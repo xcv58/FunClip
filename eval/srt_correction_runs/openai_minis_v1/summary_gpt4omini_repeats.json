@@ -1,0 +1,29 @@
+{
+  "updated_at": "2026-04-06T20:21:14.655829+00:00",
+  "models": {
+    "gpt-4o-mini": {
+      "completed_results": 10,
+      "cases_covered": [
+        "fire_01",
+        "mazu_02",
+        "mazu_03",
+        "mazu_04",
+        "mazu_05"
+      ],
+      "exact_match_rate": 0.0,
+      "hard_gate_pass_rate": 0.8,
+      "mean_text_only_similarity_output_to_gold": 0.8328468166265647,
+      "mean_text_only_progress_ratio": 0.04969966079505046,
+      "positive_text_progress_rate": 0.9,
+      "gold_editorial_delta_rate": 1.0,
+      "latency_sample_count": 6,
+      "median_latency_seconds": 157.20276372949593,
+      "p95_latency_seconds": 190.95150182343787,
+      "mean_char_edit_distance_output_to_gold": 11215.4,
+      "total_prompt_tokens": 77670,
+      "total_completion_tokens": 74442,
+      "total_estimated_cost_usd": 0.056315699999999996
+    }
+  },
+  "result_count": 10
+}

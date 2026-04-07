@@ -168,6 +168,71 @@ venv/bin/python scripts/eval_srt_correction.py \
   --models gpt-5.4-mini
 ```
 
+For a local Ollama model, use the LiteLLM provider prefix and point the runner
+at the Ollama host:
+
+```bash
+venv/bin/python scripts/eval_srt_correction.py \
+  --suite-name baseline_v1 \
+  --models ollama_chat/gemma4 \
+  --base-url http://localhost:11434 \
+  --gold-filename final_simplified.srt
+```
+
+If the local model has a smaller context window, you can keep the runner under a
+prompt budget with `--max-prompt-tokens`. For the current `gemma4` Ollama
+model, `ollama show gemma4` reports a 131072-token context window, so the
+current FunClip eval cases fit without chunking.
+
+If you later add a different gold SRT file to each case, you can rescore the
+cached outputs without calling any model again:
+
+```bash
+venv/bin/python scripts/eval_srt_correction.py \
+  --suite-name baseline_v1 \
+  --models gpt-4o-mini gpt-5-mini gpt-5.4-mini \
+  --gold-filename final_chinese.srt \
+  --rescore-only \
+  --report-tag chinese
+```
+
+That writes a separate set of report files such as:
+
+- `summary_chinese.json`
+- `results_chinese.csv`
+- `report_chinese.md`
+
+The existing cached `corrected.srt` outputs are reused as-is.
+
+## Workflow-tolerant interpretation
+
+For the current FunClip workflow, the final downloaded SRT may differ from the
+AI-corrected SRT in two ways that should not always count as model failure:
+
+- slight cue timing trims or extensions from YouTube export
+- cue split/merge or cue removal during manual cleanup of background speech,
+  filler, or non-subtitle audio
+
+The runner therefore also records workflow-tolerant text metrics:
+
+- text-only similarity to gold, ignoring cue boundaries and timestamps
+- text progress vs the raw ASR input
+- whether the final gold already has editorial structure changes relative to the
+  raw ASR input
+
+It also records a more forgiving `reading-text` metric that normalizes away:
+
+- cue split/merge presentation differences
+- whitespace-only differences
+- common punctuation differences introduced during subtitle polishing
+
+Use `reading-text` when you want to answer "did the model recover the right
+words to read on screen?" even if the final SRT was later split, merged, or
+lightly repunctuated by human editing or YouTube export.
+
+This helps separate "the model chose the wrong words" from "the final subtitle
+was later edited for timing/readability."
+
 ## Fixture builder
 
 If you already have:

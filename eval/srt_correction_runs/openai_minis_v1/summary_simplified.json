@@ -1,0 +1,63 @@
+{
+  "updated_at": "2026-04-06T15:42:36.732580+00:00",
+  "models": {
+    "gpt-4o-mini": {
+      "completed_results": 5,
+      "cases_covered": [
+        "fire_01",
+        "mazu_02",
+        "mazu_03",
+        "mazu_04",
+        "mazu_05"
+      ],
+      "exact_match_rate": 0.0,
+      "hard_gate_pass_rate": 0.8,
+      "latency_sample_count": 1,
+      "median_latency_seconds": 175.00878533395007,
+      "p95_latency_seconds": 175.00878533395007,
+      "mean_char_edit_distance_output_to_gold": 11225.8,
+      "total_prompt_tokens": 38835,
+      "total_completion_tokens": 37228,
+      "total_estimated_cost_usd": 0.02816205
+    },
+    "gpt-5-mini": {
+      "completed_results": 5,
+      "cases_covered": [
+        "fire_01",
+        "mazu_02",
+        "mazu_03",
+        "mazu_04",
+        "mazu_05"
+      ],
+      "exact_match_rate": 0.0,
+      "hard_gate_pass_rate": 1.0,
+      "latency_sample_count": 5,
+      "median_latency_seconds": 181.3048256249167,
+      "p95_latency_seconds": 211.14582526641897,
+      "mean_char_edit_distance_output_to_gold": 11265.2,
+      "total_prompt_tokens": 38830,
+      "total_completion_tokens": 59252,
+      "total_estimated_cost_usd": 0.1282115
+    },
+    "gpt-5.4-mini": {
+      "completed_results": 5,
+      "cases_covered": [
+        "fire_01",
+        "mazu_02",
+        "mazu_03",
+        "mazu_04",
+        "mazu_05"
+      ],
+      "exact_match_rate": 0.0,
+      "hard_gate_pass_rate": 1.0,
+      "latency_sample_count": 5,
+      "median_latency_seconds": 33.160441166954115,
+      "p95_latency_seconds": 36.33615281644743,
+      "mean_char_edit_distance_output_to_gold": 11263.6,
+      "total_prompt_tokens": 38830,
+      "total_completion_tokens": 37337,
+      "total_estimated_cost_usd": 0.197139
+    }
+  },
+  "result_count": 15
+}

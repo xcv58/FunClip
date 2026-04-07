@@ -11,6 +11,7 @@ import statistics
 import sys
 import time
 import traceback
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -36,6 +37,10 @@ load_dotenv()
 
 CASE_INPUT_FILENAME = "original_transcribed.srt"
 CASE_GOLD_FILENAME = "final_traditional.srt"
+READING_TEXT_PUNCTUATION = (
+    "\"'`.,!?;:-_()[]{}<>|/\\"
+    "，。！？；：、（）【】《》〈〉「」『』“”‘’…．～·"
+)
 
 
 def now_utc_iso() -> str:
@@ -44,6 +49,13 @@ def now_utc_iso() -> str:
 
 def normalize_newlines(text: str) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def canonicalize_reading_text(text: str) -> str:
+    normalized = unicodedata.normalize("NFKC", text)
+    normalized = re.sub(rf"[{re.escape(READING_TEXT_PUNCTUATION)}]", "", normalized)
+    normalized = re.sub(r"\s+", "", normalized)
+    return normalized
 
 
 def sanitize_token(raw_value: str) -> str:
@@ -95,6 +107,37 @@ def discover_cases(cases_root: Path, selected_case_ids: set[str] | None) -> list
     return cases
 
 
+def discover_cases_with_gold_filename(
+    cases_root: Path,
+    selected_case_ids: set[str] | None,
+    gold_filename: str,
+) -> list[dict]:
+    cases = []
+    for case_dir in sorted(cases_root.iterdir()):
+        if not case_dir.is_dir():
+            continue
+        case_id = case_dir.name
+        if selected_case_ids and case_id not in selected_case_ids:
+            continue
+
+        input_path = case_dir / CASE_INPUT_FILENAME
+        gold_path = case_dir / gold_filename
+        if not input_path.exists() or not gold_path.exists():
+            continue
+
+        cases.append(
+            {
+                "case_id": case_id,
+                "case_dir": case_dir,
+                "input_path": input_path,
+                "gold_path": gold_path,
+                "gold_filename": gold_filename,
+            }
+        )
+
+    return cases
+
+
 def split_srt_blocks(srt_content: str) -> list[str]:
     normalized = normalize_newlines(srt_content).strip()
     if not normalized:
@@ -140,6 +183,29 @@ def parse_srt_structure(srt_content: str) -> dict:
         )
 
     return {"parse_ok": True, "error": None, "segments": segments}
+
+
+def flatten_srt_text(srt_content: str) -> str:
+    parsed = parse_srt_structure(srt_content)
+    if parsed["parse_ok"]:
+        return "".join("".join(segment["text_lines"]) for segment in parsed["segments"])
+
+    blocks = split_srt_blocks(srt_content)
+    flattened = []
+    for block in blocks:
+        lines = block.split("\n")
+        flattened.extend(lines[2:])
+    return "".join(flattened)
+
+
+def text_similarity_ratio(left_srt: str, right_srt: str) -> float:
+    left_text = flatten_srt_text(left_srt)
+    right_text = flatten_srt_text(right_srt)
+    return difflib.SequenceMatcher(a=left_text, b=right_text).ratio()
+
+
+def text_similarity_ratio_for_text(left_text: str, right_text: str) -> float:
+    return difflib.SequenceMatcher(a=left_text, b=right_text).ratio()
 
 
 def levenshtein_distance(left: str, right: str) -> int:
@@ -239,6 +305,108 @@ def compute_structural_metrics(input_srt: str, output_srt: str) -> dict:
     }
 
 
+def compute_workflow_tolerant_metrics(input_srt: str, output_srt: str, gold_srt: str) -> dict:
+    normalized_input = normalize_newlines(input_srt)
+    normalized_output = normalize_newlines(output_srt)
+    normalized_gold = normalize_newlines(gold_srt)
+
+    input_parse = parse_srt_structure(normalized_input)
+    output_parse = parse_srt_structure(normalized_output)
+    gold_parse = parse_srt_structure(normalized_gold)
+
+    input_segment_count = len(input_parse["segments"]) if input_parse["parse_ok"] else None
+    output_segment_count = len(output_parse["segments"]) if output_parse["parse_ok"] else None
+    gold_segment_count = len(gold_parse["segments"]) if gold_parse["parse_ok"] else None
+
+    text_only_input_to_gold = approximate_text_distance(
+        flatten_srt_text(normalized_input),
+        flatten_srt_text(normalized_gold),
+    )
+    text_only_output_to_gold = approximate_text_distance(
+        flatten_srt_text(normalized_output),
+        flatten_srt_text(normalized_gold),
+    )
+    text_only_output_to_input = approximate_text_distance(
+        flatten_srt_text(normalized_output),
+        flatten_srt_text(normalized_input),
+    )
+    reading_input = canonicalize_reading_text(flatten_srt_text(normalized_input))
+    reading_output = canonicalize_reading_text(flatten_srt_text(normalized_output))
+    reading_gold = canonicalize_reading_text(flatten_srt_text(normalized_gold))
+    reading_text_input_to_gold = approximate_text_distance(reading_input, reading_gold)
+    reading_text_output_to_gold = approximate_text_distance(reading_output, reading_gold)
+    reading_text_output_to_input = approximate_text_distance(reading_output, reading_input)
+
+    progress_denominator = text_only_input_to_gold
+    if progress_denominator == 0:
+        text_only_progress_ratio = 1.0 if text_only_output_to_gold == 0 else 0.0
+    else:
+        text_only_progress_ratio = (
+            text_only_input_to_gold - text_only_output_to_gold
+        ) / progress_denominator
+    reading_progress_denominator = reading_text_input_to_gold
+    if reading_progress_denominator == 0:
+        reading_text_progress_ratio = 1.0 if reading_text_output_to_gold == 0 else 0.0
+    else:
+        reading_text_progress_ratio = (
+            reading_text_input_to_gold - reading_text_output_to_gold
+        ) / reading_progress_denominator
+
+    gold_matches_input_structure = False
+    gold_matches_input_indices = False
+    gold_matches_input_timestamps = False
+    if input_parse["parse_ok"] and gold_parse["parse_ok"]:
+        gold_matches_input_structure = len(input_parse["segments"]) == len(gold_parse["segments"])
+        gold_matches_input_indices = [segment["index"] for segment in input_parse["segments"]] == [
+            segment["index"] for segment in gold_parse["segments"]
+        ]
+        gold_matches_input_timestamps = [segment["timestamp"] for segment in input_parse["segments"]] == [
+            segment["timestamp"] for segment in gold_parse["segments"]
+        ]
+
+    return {
+        "text_only_exact_match_gold": flatten_srt_text(normalized_output) == flatten_srt_text(normalized_gold),
+        "text_only_similarity_input_to_gold": text_similarity_ratio(normalized_input, normalized_gold),
+        "text_only_similarity_output_to_gold": text_similarity_ratio(normalized_output, normalized_gold),
+        "text_only_similarity_output_to_input": text_similarity_ratio(normalized_output, normalized_input),
+        "text_only_edit_distance_input_to_gold": text_only_input_to_gold,
+        "text_only_edit_distance_output_to_gold": text_only_output_to_gold,
+        "text_only_edit_distance_output_to_input": text_only_output_to_input,
+        "text_only_progress_ratio": text_only_progress_ratio,
+        "text_only_positive_progress": text_only_output_to_gold < text_only_input_to_gold,
+        "reading_text_exact_match_gold": reading_output == reading_gold,
+        "reading_text_similarity_input_to_gold": text_similarity_ratio_for_text(reading_input, reading_gold),
+        "reading_text_similarity_output_to_gold": text_similarity_ratio_for_text(reading_output, reading_gold),
+        "reading_text_similarity_output_to_input": text_similarity_ratio_for_text(reading_output, reading_input),
+        "reading_text_edit_distance_input_to_gold": reading_text_input_to_gold,
+        "reading_text_edit_distance_output_to_gold": reading_text_output_to_gold,
+        "reading_text_edit_distance_output_to_input": reading_text_output_to_input,
+        "reading_text_progress_ratio": reading_text_progress_ratio,
+        "reading_text_positive_progress": reading_text_output_to_gold < reading_text_input_to_gold,
+        "input_segment_count": input_segment_count,
+        "output_segment_count": output_segment_count,
+        "gold_segment_count": gold_segment_count,
+        "output_segment_count_delta_to_gold": (
+            output_segment_count - gold_segment_count
+            if output_segment_count is not None and gold_segment_count is not None
+            else None
+        ),
+        "input_segment_count_delta_to_gold": (
+            input_segment_count - gold_segment_count
+            if input_segment_count is not None and gold_segment_count is not None
+            else None
+        ),
+        "gold_matches_input_structure": gold_matches_input_structure,
+        "gold_matches_input_indices": gold_matches_input_indices,
+        "gold_matches_input_timestamps": gold_matches_input_timestamps,
+        "gold_has_editorial_structure_delta": not (
+            gold_matches_input_structure
+            and gold_matches_input_indices
+            and gold_matches_input_timestamps
+        ),
+    }
+
+
 def estimate_cost_usd(model_name: str, usage: dict | None) -> float | None:
     if not usage:
         return None
@@ -295,12 +463,137 @@ def estimate_usage_from_text(model_name: str, input_srt: str, output_srt: str) -
     }
 
 
+def estimate_prompt_tokens_for_srt(model_name: str, srt_content: str) -> int | None:
+    try:
+        messages = [
+            {"role": "system", "content": build_correction_prompt()},
+            {"role": "user", "content": srt_content},
+        ]
+        return token_counter(model=model_name, messages=messages)
+    except Exception:
+        return None
+
+
+def join_srt_blocks(blocks: list[str]) -> str:
+    if not blocks:
+        return ""
+    return "\n\n".join(block.strip("\n") for block in blocks).strip() + "\n"
+
+
+def chunk_srt_by_prompt_budget(model_name: str, srt_content: str, max_prompt_tokens: int) -> list[str]:
+    blocks = split_srt_blocks(srt_content)
+    if not blocks:
+        return [srt_content]
+
+    chunks: list[list[str]] = []
+    current_chunk: list[str] = []
+
+    for block in blocks:
+        candidate_chunk = current_chunk + [block]
+        candidate_text = join_srt_blocks(candidate_chunk)
+        prompt_tokens = estimate_prompt_tokens_for_srt(model_name=model_name, srt_content=candidate_text)
+
+        if prompt_tokens is None:
+            return [srt_content]
+
+        if prompt_tokens <= max_prompt_tokens or not current_chunk:
+            current_chunk = candidate_chunk
+            continue
+
+        chunks.append(current_chunk)
+        current_chunk = [block]
+
+    if current_chunk:
+        chunks.append(current_chunk)
+
+    return [join_srt_blocks(chunk_blocks) for chunk_blocks in chunks]
+
+
+def merge_usage_dicts(usages: list[dict | None]) -> dict | None:
+    merged = {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+    }
+    saw_usage = False
+    for usage in usages:
+        if not usage:
+            continue
+        saw_usage = True
+        merged["prompt_tokens"] += usage.get("prompt_tokens") or 0
+        merged["completion_tokens"] += usage.get("completion_tokens") or 0
+        merged["total_tokens"] += usage.get("total_tokens") or 0
+
+    return merged if saw_usage else None
+
+
+def request_srt_correction_with_optional_chunking(
+    *,
+    srt_content: str,
+    model: str,
+    api_key: str | None,
+    base_url: str | None,
+    max_prompt_tokens: int | None,
+    request_kwargs: dict,
+) -> dict:
+    if not max_prompt_tokens:
+        return request_srt_correction(
+            srt_content=srt_content,
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            **request_kwargs,
+        )
+
+    chunks = chunk_srt_by_prompt_budget(
+        model_name=model,
+        srt_content=srt_content,
+        max_prompt_tokens=max_prompt_tokens,
+    )
+    if len(chunks) == 1:
+        return request_srt_correction(
+            srt_content=srt_content,
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            **request_kwargs,
+        )
+
+    responses = []
+    corrected_chunks = []
+    for chunk in chunks:
+        response = request_srt_correction(
+            srt_content=chunk,
+            api_key=api_key,
+            base_url=base_url,
+            model=model,
+            **request_kwargs,
+        )
+        responses.append(response)
+        corrected_chunks.append(response["corrected_content"])
+
+    return {
+        "corrected_content": join_srt_blocks(split_srt_blocks(join_srt_blocks(corrected_chunks))),
+        "requested_model": model,
+        "resolved_model": responses[0].get("resolved_model") if responses else model,
+        "usage": merge_usage_dicts([response.get("usage") for response in responses]),
+        "messages": None,
+        "response_id": responses[0].get("response_id") if responses else None,
+        "chunk_count": len(chunks),
+    }
+
+
 def compute_metrics(input_srt: str, output_srt: str, gold_srt: str, usage: dict | None, model_name: str) -> dict:
     normalized_input = normalize_newlines(input_srt)
     normalized_output = normalize_newlines(output_srt)
     normalized_gold = normalize_newlines(gold_srt)
 
     structural = compute_structural_metrics(normalized_input, normalized_output)
+    workflow_tolerant = compute_workflow_tolerant_metrics(
+        input_srt=normalized_input,
+        output_srt=normalized_output,
+        gold_srt=normalized_gold,
+    )
 
     distance_input_to_output = segment_text_distance(normalized_input, normalized_output)
     distance_input_to_gold = segment_text_distance(normalized_input, normalized_gold)
@@ -308,6 +601,7 @@ def compute_metrics(input_srt: str, output_srt: str, gold_srt: str, usage: dict 
 
     return {
         **structural,
+        **workflow_tolerant,
         "exact_match_gold": normalized_output == normalized_gold,
         "exact_match_input": normalized_output == normalized_input,
         "char_edit_distance_input_to_output": distance_input_to_output,
@@ -326,6 +620,7 @@ def hydrate_result_payload(payload: dict) -> dict:
         return payload
 
     input_srt = read_text(Path(payload["input_path"]))
+    gold_srt = read_text(Path(payload["gold_path"]))
     output_srt = read_text(output_path)
     metrics = dict(payload["metrics"])
     usage = payload.get("usage")
@@ -348,6 +643,25 @@ def hydrate_result_payload(payload: dict) -> dict:
             metrics["total_tokens"] = estimated_usage["total_tokens"]
             if usage is None:
                 usage = estimated_usage
+
+    if any(
+        key not in metrics
+        for key in [
+            "text_only_similarity_output_to_gold",
+            "text_only_progress_ratio",
+            "reading_text_similarity_output_to_gold",
+            "reading_text_progress_ratio",
+            "gold_has_editorial_structure_delta",
+        ]
+    ):
+        refreshed_metrics = compute_metrics(
+            input_srt=input_srt,
+            output_srt=output_srt,
+            gold_srt=gold_srt,
+            usage=usage,
+            model_name=requested_model or resolved_model or "",
+        )
+        metrics.update(refreshed_metrics)
 
     if metrics.get("estimated_cost_usd") is None:
         metrics["estimated_cost_usd"] = estimate_cost_usd_from_candidates(
@@ -462,7 +776,10 @@ def aggregate_results(suite_root: Path, requested_models: list[str] | None = Non
         return results, {}
 
     for result_path in sorted(models_root.glob("*/cases/*/repeat_*/result.json")):
-        payload = hydrate_result_payload(json.loads(read_text(result_path)))
+        raw_payload = json.loads(read_text(result_path))
+        if raw_payload.get("status") != "completed":
+            continue
+        payload = hydrate_result_payload(raw_payload)
         if payload.get("status") != "completed":
             continue
         if requested_set and payload.get("requested_model") not in requested_set:
@@ -473,16 +790,80 @@ def aggregate_results(suite_root: Path, requested_models: list[str] | None = Non
     for model_name in sorted({result["requested_model"] for result in results}):
         model_results = [result for result in results if result["requested_model"] == model_name]
         latencies = [result["latency_seconds"] for result in model_results if result.get("latency_seconds") is not None]
-        costs = [result["metrics"]["estimated_cost_usd"] for result in model_results if result["metrics"]["estimated_cost_usd"] is not None]
+        costs = [
+            result["metrics"]["estimated_cost_usd"]
+            for result in model_results
+            if result["metrics"]["estimated_cost_usd"] is not None
+        ]
         exact_matches = [result["metrics"]["exact_match_gold"] for result in model_results]
         hard_gate_passes = [result["metrics"]["hard_gate_pass"] for result in model_results]
         distance_to_gold = [result["metrics"]["char_edit_distance_output_to_gold"] for result in model_results]
+        text_similarity_to_gold = [
+            result["metrics"].get("text_only_similarity_output_to_gold")
+            for result in model_results
+            if result["metrics"].get("text_only_similarity_output_to_gold") is not None
+        ]
+        text_progress = [
+            result["metrics"].get("text_only_progress_ratio")
+            for result in model_results
+            if result["metrics"].get("text_only_progress_ratio") is not None
+        ]
+        reading_text_similarity_to_gold = [
+            result["metrics"].get("reading_text_similarity_output_to_gold")
+            for result in model_results
+            if result["metrics"].get("reading_text_similarity_output_to_gold") is not None
+        ]
+        reading_text_progress = [
+            result["metrics"].get("reading_text_progress_ratio")
+            for result in model_results
+            if result["metrics"].get("reading_text_progress_ratio") is not None
+        ]
+        positive_text_progress = [
+            result["metrics"].get("text_only_positive_progress")
+            for result in model_results
+            if result["metrics"].get("text_only_positive_progress") is not None
+        ]
+        positive_reading_text_progress = [
+            result["metrics"].get("reading_text_positive_progress")
+            for result in model_results
+            if result["metrics"].get("reading_text_positive_progress") is not None
+        ]
+        gold_editorial_deltas = [
+            result["metrics"].get("gold_has_editorial_structure_delta")
+            for result in model_results
+            if result["metrics"].get("gold_has_editorial_structure_delta") is not None
+        ]
 
         model_summaries[model_name] = {
             "completed_results": len(model_results),
             "cases_covered": sorted({result["case_id"] for result in model_results}),
             "exact_match_rate": (sum(exact_matches) / len(exact_matches)) if exact_matches else None,
             "hard_gate_pass_rate": (sum(hard_gate_passes) / len(hard_gate_passes)) if hard_gate_passes else None,
+            "mean_text_only_similarity_output_to_gold": (
+                statistics.mean(text_similarity_to_gold) if text_similarity_to_gold else None
+            ),
+            "mean_text_only_progress_ratio": statistics.mean(text_progress) if text_progress else None,
+            "mean_reading_text_similarity_output_to_gold": (
+                statistics.mean(reading_text_similarity_to_gold) if reading_text_similarity_to_gold else None
+            ),
+            "mean_reading_text_progress_ratio": (
+                statistics.mean(reading_text_progress) if reading_text_progress else None
+            ),
+            "positive_text_progress_rate": (
+                sum(1 for value in positive_text_progress if value) / len(positive_text_progress)
+                if positive_text_progress
+                else None
+            ),
+            "positive_reading_text_progress_rate": (
+                sum(1 for value in positive_reading_text_progress if value) / len(positive_reading_text_progress)
+                if positive_reading_text_progress
+                else None
+            ),
+            "gold_editorial_delta_rate": (
+                sum(1 for value in gold_editorial_deltas if value) / len(gold_editorial_deltas)
+                if gold_editorial_deltas
+                else None
+            ),
             "latency_sample_count": len(latencies),
             "median_latency_seconds": statistics.median(latencies) if latencies else None,
             "p95_latency_seconds": percentile(latencies, 95) if latencies else None,
@@ -517,10 +898,21 @@ def percentile(values: list[float], pct: int) -> float | None:
     return ordered[low] + (ordered[high] - ordered[low]) * fraction
 
 
-def write_summary_outputs(suite_root: Path, results: list[dict], model_summaries: dict) -> None:
-    summary_json_path = suite_root / "summary.json"
-    summary_csv_path = suite_root / "results.csv"
-    summary_md_path = suite_root / "report.md"
+def output_path_with_tag(suite_root: Path, base_name: str, extension: str, tag: str | None) -> Path:
+    if tag:
+        return suite_root / f"{base_name}_{sanitize_token(tag)}.{extension}"
+    return suite_root / f"{base_name}.{extension}"
+
+
+def write_summary_outputs(
+    suite_root: Path,
+    results: list[dict],
+    model_summaries: dict,
+    tag: str | None = None,
+) -> tuple[Path, Path, Path]:
+    summary_json_path = output_path_with_tag(suite_root, "summary", "json", tag)
+    summary_csv_path = output_path_with_tag(suite_root, "results", "csv", tag)
+    summary_md_path = output_path_with_tag(suite_root, "report", "md", tag)
 
     write_json(
         summary_json_path,
@@ -540,6 +932,13 @@ def write_summary_outputs(suite_root: Path, results: list[dict], model_summaries
         "exact_match_gold",
         "hard_gate_pass",
         "char_edit_distance_output_to_gold",
+        "text_only_similarity_output_to_gold",
+        "text_only_progress_ratio",
+        "text_only_positive_progress",
+        "reading_text_similarity_output_to_gold",
+        "reading_text_progress_ratio",
+        "reading_text_positive_progress",
+        "gold_has_editorial_structure_delta",
         "char_edit_distance_input_to_output",
         "prompt_tokens",
         "completion_tokens",
@@ -562,6 +961,13 @@ def write_summary_outputs(suite_root: Path, results: list[dict], model_summaries
                     "exact_match_gold": metrics["exact_match_gold"],
                     "hard_gate_pass": metrics["hard_gate_pass"],
                     "char_edit_distance_output_to_gold": metrics["char_edit_distance_output_to_gold"],
+                    "text_only_similarity_output_to_gold": metrics.get("text_only_similarity_output_to_gold"),
+                    "text_only_progress_ratio": metrics.get("text_only_progress_ratio"),
+                    "text_only_positive_progress": metrics.get("text_only_positive_progress"),
+                    "reading_text_similarity_output_to_gold": metrics.get("reading_text_similarity_output_to_gold"),
+                    "reading_text_progress_ratio": metrics.get("reading_text_progress_ratio"),
+                    "reading_text_positive_progress": metrics.get("reading_text_positive_progress"),
+                    "gold_has_editorial_structure_delta": metrics.get("gold_has_editorial_structure_delta"),
                     "char_edit_distance_input_to_output": metrics["char_edit_distance_input_to_output"],
                     "prompt_tokens": metrics["prompt_tokens"],
                     "completion_tokens": metrics["completion_tokens"],
@@ -572,6 +978,8 @@ def write_summary_outputs(suite_root: Path, results: list[dict], model_summaries
             )
 
     report_lines = ["# SRT Auto-Correction Report", ""]
+    if tag:
+        report_lines.extend([f"- score tag: {tag}", ""])
     for model_name, summary in model_summaries.items():
         report_lines.extend(
             [
@@ -580,6 +988,13 @@ def write_summary_outputs(suite_root: Path, results: list[dict], model_summaries
                 f"- completed results: {summary['completed_results']}",
                 f"- exact match rate: {format_float(summary['exact_match_rate'])}",
                 f"- hard gate pass rate: {format_float(summary['hard_gate_pass_rate'])}",
+                f"- mean reading-text similarity to gold: {format_float(summary['mean_reading_text_similarity_output_to_gold'])}",
+                f"- mean reading-text progress vs raw ASR: {format_float(summary['mean_reading_text_progress_ratio'])}",
+                f"- positive reading-text progress rate: {format_float(summary['positive_reading_text_progress_rate'])}",
+                f"- mean text-only similarity to gold: {format_float(summary['mean_text_only_similarity_output_to_gold'])}",
+                f"- mean text progress vs raw ASR: {format_float(summary['mean_text_only_progress_ratio'])}",
+                f"- positive text progress rate: {format_float(summary['positive_text_progress_rate'])}",
+                f"- gold editorial delta rate: {format_float(summary['gold_editorial_delta_rate'])}",
                 f"- latency samples: {summary['latency_sample_count']}",
                 f"- median latency (s): {format_float(summary['median_latency_seconds'])}",
                 f"- p95 latency (s): {format_float(summary['p95_latency_seconds'])}",
@@ -590,6 +1005,7 @@ def write_summary_outputs(suite_root: Path, results: list[dict], model_summaries
         )
 
     write_text(summary_md_path, "\n".join(report_lines).rstrip() + "\n")
+    return summary_json_path, summary_csv_path, summary_md_path
 
 
 def format_float(value: float | None, digits: int = 4) -> str:
@@ -656,7 +1072,245 @@ def load_args() -> argparse.Namespace:
         default=None,
         help="Optional reasoning effort forwarded to reasoning models.",
     )
+    parser.add_argument(
+        "--gold-filename",
+        default=CASE_GOLD_FILENAME,
+        help=(
+            "Gold SRT filename inside each case directory. "
+            f"Defaults to {CASE_GOLD_FILENAME}."
+        ),
+    )
+    parser.add_argument(
+        "--rescore-only",
+        action="store_true",
+        help="Recompute metrics from cached outputs only. No model API calls are made.",
+    )
+    parser.add_argument(
+        "--report-tag",
+        default=None,
+        help=(
+            "Optional suffix for summary/report files, useful when rescoring against "
+            "a different gold file."
+        ),
+    )
+    parser.add_argument(
+        "--max-prompt-tokens",
+        type=int,
+        default=None,
+        help=(
+            "Optional per-request prompt token budget. When set, long SRT files are "
+            "split into smaller chunks before calling the model."
+        ),
+    )
     return parser.parse_args()
+
+
+def summarize_results(results: list[dict]) -> dict:
+    model_summaries = {}
+    for model_name in sorted({result["requested_model"] for result in results}):
+        model_results = [result for result in results if result["requested_model"] == model_name]
+        latencies = [result["latency_seconds"] for result in model_results if result.get("latency_seconds") is not None]
+        costs = [
+            result["metrics"]["estimated_cost_usd"]
+            for result in model_results
+            if result["metrics"]["estimated_cost_usd"] is not None
+        ]
+        exact_matches = [result["metrics"]["exact_match_gold"] for result in model_results]
+        hard_gate_passes = [result["metrics"]["hard_gate_pass"] for result in model_results]
+        distance_to_gold = [result["metrics"]["char_edit_distance_output_to_gold"] for result in model_results]
+        text_similarity_to_gold = [
+            result["metrics"]["text_only_similarity_output_to_gold"]
+            for result in model_results
+            if result["metrics"].get("text_only_similarity_output_to_gold") is not None
+        ]
+        text_progress_ratios = [
+            result["metrics"]["text_only_progress_ratio"]
+            for result in model_results
+            if result["metrics"].get("text_only_progress_ratio") is not None
+        ]
+        reading_text_similarity_to_gold = [
+            result["metrics"]["reading_text_similarity_output_to_gold"]
+            for result in model_results
+            if result["metrics"].get("reading_text_similarity_output_to_gold") is not None
+        ]
+        reading_text_progress_ratios = [
+            result["metrics"]["reading_text_progress_ratio"]
+            for result in model_results
+            if result["metrics"].get("reading_text_progress_ratio") is not None
+        ]
+        positive_progress_flags = [
+            result["metrics"]["text_only_positive_progress"]
+            for result in model_results
+            if result["metrics"].get("text_only_positive_progress") is not None
+        ]
+        positive_reading_progress_flags = [
+            result["metrics"]["reading_text_positive_progress"]
+            for result in model_results
+            if result["metrics"].get("reading_text_positive_progress") is not None
+        ]
+        editorial_delta_flags = [
+            result["metrics"]["gold_has_editorial_structure_delta"]
+            for result in model_results
+            if result["metrics"].get("gold_has_editorial_structure_delta") is not None
+        ]
+
+        model_summaries[model_name] = {
+            "completed_results": len(model_results),
+            "cases_covered": sorted({result["case_id"] for result in model_results}),
+            "exact_match_rate": (sum(exact_matches) / len(exact_matches)) if exact_matches else None,
+            "hard_gate_pass_rate": (sum(hard_gate_passes) / len(hard_gate_passes)) if hard_gate_passes else None,
+            "mean_text_only_similarity_output_to_gold": (
+                statistics.mean(text_similarity_to_gold) if text_similarity_to_gold else None
+            ),
+            "mean_text_only_progress_ratio": (
+                statistics.mean(text_progress_ratios) if text_progress_ratios else None
+            ),
+            "mean_reading_text_similarity_output_to_gold": (
+                statistics.mean(reading_text_similarity_to_gold) if reading_text_similarity_to_gold else None
+            ),
+            "mean_reading_text_progress_ratio": (
+                statistics.mean(reading_text_progress_ratios) if reading_text_progress_ratios else None
+            ),
+            "positive_text_progress_rate": (
+                sum(positive_progress_flags) / len(positive_progress_flags)
+                if positive_progress_flags
+                else None
+            ),
+            "positive_reading_text_progress_rate": (
+                sum(positive_reading_progress_flags) / len(positive_reading_progress_flags)
+                if positive_reading_progress_flags
+                else None
+            ),
+            "gold_editorial_delta_rate": (
+                sum(editorial_delta_flags) / len(editorial_delta_flags)
+                if editorial_delta_flags
+                else None
+            ),
+            "latency_sample_count": len(latencies),
+            "median_latency_seconds": statistics.median(latencies) if latencies else None,
+            "p95_latency_seconds": percentile(latencies, 95) if latencies else None,
+            "mean_char_edit_distance_output_to_gold": (
+                statistics.mean(distance_to_gold) if distance_to_gold else None
+            ),
+            "total_prompt_tokens": sum(
+                result["metrics"]["prompt_tokens"] or 0 for result in model_results
+            ),
+            "total_completion_tokens": sum(
+                result["metrics"]["completion_tokens"] or 0 for result in model_results
+            ),
+            "total_estimated_cost_usd": sum(costs) if costs else None,
+        }
+
+    return model_summaries
+
+
+def find_cached_outputs(
+    suite_root: Path,
+    requested_models: list[str],
+    selected_case_ids: set[str] | None,
+) -> list[dict]:
+    requested_set = {sanitize_token(model): model for model in requested_models}
+    outputs = []
+    for corrected_path in sorted(suite_root.glob("models/*/cases/*/repeat_*/corrected.srt")):
+        model_slug = corrected_path.parents[3].name
+        case_id = corrected_path.parents[1].name
+        repeat_label = corrected_path.parent.name
+        if model_slug not in requested_set:
+            continue
+        if selected_case_ids and case_id not in selected_case_ids:
+            continue
+        repeat_index = int(repeat_label.split("_")[-1])
+        result_path = corrected_path.with_name("result.json")
+        result_payload = json.loads(read_text(result_path)) if result_path.exists() else {}
+        outputs.append(
+            {
+                "requested_model": requested_set[model_slug],
+                "resolved_model": result_payload.get("resolved_model") or requested_set[model_slug],
+                "case_id": case_id,
+                "repeat_index": repeat_index,
+                "output_path": corrected_path,
+                "result_path": result_path,
+                "latency_seconds": result_payload.get("latency_seconds"),
+                "usage": result_payload.get("usage"),
+            }
+        )
+    return outputs
+
+
+def rescore_cached_outputs(
+    suite_root: Path,
+    cases_root: Path,
+    requested_models: list[str],
+    selected_case_ids: set[str] | None,
+    gold_filename: str,
+    report_tag: str | None,
+) -> tuple[list[dict], Path, Path, Path]:
+    cases = discover_cases_with_gold_filename(
+        cases_root=cases_root,
+        selected_case_ids=selected_case_ids,
+        gold_filename=gold_filename,
+    )
+    case_map = {case["case_id"]: case for case in cases}
+    cached_outputs = find_cached_outputs(
+        suite_root=suite_root,
+        requested_models=requested_models,
+        selected_case_ids=selected_case_ids,
+    )
+
+    results = []
+    for entry in cached_outputs:
+        case = case_map.get(entry["case_id"])
+        if case is None:
+            continue
+        input_srt = read_text(case["input_path"])
+        gold_srt = read_text(case["gold_path"])
+        output_srt = read_text(entry["output_path"])
+        usage = entry.get("usage")
+        if usage is None:
+            usage = estimate_usage_from_text(
+                model_name=entry["requested_model"],
+                input_srt=input_srt,
+                output_srt=output_srt,
+            )
+        metrics = compute_metrics(
+            input_srt=input_srt,
+            output_srt=output_srt,
+            gold_srt=gold_srt,
+            usage=usage,
+            model_name=entry["requested_model"],
+        )
+        results.append(
+            {
+                "status": "completed",
+                "suite_name": suite_root.name,
+                "case_id": entry["case_id"],
+                "repeat_index": entry["repeat_index"],
+                "requested_model": entry["requested_model"],
+                "resolved_model": entry["resolved_model"],
+                "response_id": None,
+                "latency_seconds": entry.get("latency_seconds"),
+                "started_at": None,
+                "completed_at": now_utc_iso(),
+                "usage": usage,
+                "metrics": metrics,
+                "input_path": str(case["input_path"]),
+                "gold_path": str(case["gold_path"]),
+                "output_path": str(entry["output_path"]),
+                "result_path": str(entry["result_path"]),
+                "prompt_sha256": None,
+                "reasoning_effort": None,
+                "gold_filename": gold_filename,
+            }
+        )
+
+    model_summaries = summarize_results(results)
+    summary_json_path, summary_csv_path, summary_md_path = write_summary_outputs(
+        suite_root=suite_root,
+        results=results,
+        model_summaries=model_summaries,
+        tag=report_tag,
+    )
+    return results, summary_json_path, summary_csv_path, summary_md_path
 
 
 def main() -> int:
@@ -666,7 +1320,28 @@ def main() -> int:
     suite_root = Path(args.output_root).expanduser().resolve() / sanitize_token(args.suite_name)
     selected_case_ids = set(args.case_ids) if args.case_ids else None
 
-    cases = discover_cases(cases_root=cases_root, selected_case_ids=selected_case_ids)
+    if args.rescore_only:
+        report_tag = args.report_tag or Path(args.gold_filename).stem
+        results, summary_json_path, summary_csv_path, summary_md_path = rescore_cached_outputs(
+            suite_root=suite_root,
+            cases_root=cases_root,
+            requested_models=args.models,
+            selected_case_ids=selected_case_ids,
+            gold_filename=args.gold_filename,
+            report_tag=report_tag,
+        )
+        print(f"suite_root={suite_root}")
+        print(f"rescored_results={len(results)}")
+        print(f"summary_json={summary_json_path}")
+        print(f"summary_csv={summary_csv_path}")
+        print(f"summary_md={summary_md_path}")
+        return 0
+
+    cases = discover_cases_with_gold_filename(
+        cases_root=cases_root,
+        selected_case_ids=selected_case_ids,
+        gold_filename=args.gold_filename,
+    )
     if not cases:
         raise RuntimeError(f"No eval cases found in {cases_root}")
 
@@ -734,12 +1409,13 @@ def main() -> int:
                 started_at = now_utc_iso()
                 started_clock = time.perf_counter()
                 try:
-                    response = request_srt_correction(
+                    response = request_srt_correction_with_optional_chunking(
                         srt_content=input_srt,
+                        model=model_name,
                         api_key=args.api_key,
                         base_url=args.base_url,
-                        model=model_name,
-                        **request_kwargs,
+                        max_prompt_tokens=args.max_prompt_tokens,
+                        request_kwargs=request_kwargs,
                     )
                     latency_seconds = time.perf_counter() - started_clock
                     corrected_srt = response["corrected_content"]
@@ -772,6 +1448,8 @@ def main() -> int:
                         "result_path": str(result_path),
                         "prompt_sha256": suite_meta["prompt_sha256"],
                         "reasoning_effort": args.reasoning_effort,
+                        "chunk_count": response.get("chunk_count", 1),
+                        "max_prompt_tokens": args.max_prompt_tokens,
                     }
                     write_json(result_path, payload)
                     completed += 1
@@ -803,15 +1481,20 @@ def main() -> int:
                     )
 
     results, model_summaries = aggregate_results(suite_root=suite_root)
-    write_summary_outputs(suite_root=suite_root, results=results, model_summaries=model_summaries)
+    summary_json_path, summary_csv_path, summary_md_path = write_summary_outputs(
+        suite_root=suite_root,
+        results=results,
+        model_summaries=model_summaries,
+        tag=args.report_tag,
+    )
 
     print(f"suite_root={suite_root}")
     print(f"completed={completed}")
     print(f"skipped={skipped}")
     print(f"failed={failed}")
-    print(f"summary_json={suite_root / 'summary.json'}")
-    print(f"summary_csv={suite_root / 'results.csv'}")
-    print(f"summary_md={suite_root / 'report.md'}")
+    print(f"summary_json={summary_json_path}")
+    print(f"summary_csv={summary_csv_path}")
+    print(f"summary_md={summary_md_path}")
     return 0 if failed == 0 else 1
 
 
