@@ -34,6 +34,7 @@
 
 <a name="What's New"></a>
 ## What's New🚀
+- 2026/05/20 FunClip now supports Fun-ASR-Nano and SenseVoice models. Fun-ASR-Nano provides higher accuracy for 31 languages; SenseVoice adds emotion recognition and audio event detection. Run `python funclip/launch.py -m fun-asr-nano` or `-m sensevoice` to try.
 - 2024/06/12 FunClip supports recognize and clip English audio files now. Run `python funclip/launch.py -l en` to try.
 - 🔥2024/05/13 FunClip v2.0.0 now supports smart clipping with large language models, integrating models from the qwen series, GPT series, etc., providing default prompts. You can also explore and share tips for setting prompts, the usage is as follows:
   1. After the recognition, select the name of the large model and configure your own apikey;
@@ -107,6 +108,8 @@ wget https://isv-data.oss-cn-hangzhou.aliyuncs.com/ics/MaaS/ClipVideo/STHeitiMed
 You can establish your own FunClip service which is same as [Modelscope Space](https://modelscope.cn/studios/iic/funasr_app_clipvideo/summary) as follow:
 ```shell
 python funclip/launch.py
+# '-m fun-asr-nano' for Fun-ASR-Nano model (higher accuracy, 31 languages)
+# '-m sensevoice' for SenseVoice model (multilingual ASR + emotion + audio event detection)
 # '-l en' for English audio recognize
 # '-p xxx' for setting port number
 # '-s True' for establishing service for public accessing
@@ -160,12 +163,20 @@ You can also scan the following DingTalk group or WeChat group QR code to join t
 |:-------------------------------------------------------------------:|:-----------------------------------------------------:|
 | <div align="left"><img src="docs/images/dingding.png" width="250"/> | <img src="docs/images/wechat.png" width="215"/></div> |
 
-## Find Speech Models in FunASR
+## Ecosystem
 
-[FunASR](https://github.com/alibaba-damo-academy/FunASR) hopes to build a bridge between academic research and industrial applications on speech recognition. By supporting the training & finetuning of the industrial-grade speech recognition model released on ModelScope, researchers and developers can conduct research and production of speech recognition models more conveniently, and promote the development of speech recognition ecology. ASR for Fun！
+FunClip is part of the **FunAudioLLM** family:
+
+| Project | Description | Stars |
+|---------|-------------|-------|
+| [FunASR](https://github.com/modelscope/FunASR) | Industrial speech recognition toolkit — VAD, ASR, punctuation, diarization | [![](https://img.shields.io/github/stars/modelscope/FunASR?style=social)](https://github.com/modelscope/FunASR) |
+| [Fun-ASR-Nano](https://github.com/FunAudioLLM/Fun-ASR) | End-to-end LLM-based ASR — 31 languages, streaming, hotwords | [![](https://img.shields.io/github/stars/FunAudioLLM/Fun-ASR?style=social)](https://github.com/FunAudioLLM/Fun-ASR) |
+| [SenseVoice](https://github.com/FunAudioLLM/SenseVoice) | Multilingual speech understanding — ASR + emotion + audio events | [![](https://img.shields.io/github/stars/FunAudioLLM/SenseVoice?style=social)](https://github.com/FunAudioLLM/SenseVoice) |
+| [CosyVoice](https://github.com/FunAudioLLM/CosyVoice) | Natural speech generation — multi-language, zero-shot cloning | [![](https://img.shields.io/github/stars/FunAudioLLM/CosyVoice?style=social)](https://github.com/FunAudioLLM/CosyVoice) |
 
 📚FunASR Paper: <a href="https://arxiv.org/abs/2305.11013"><img src="https://img.shields.io/badge/Arxiv-2305.11013-orange"></a> 
-
 📚SeACo-Paraformer Paper: <a href="https://arxiv.org/abs/2308.03266"><img src="https://img.shields.io/badge/Arxiv-2308.03266-orange"></a>
 
-🌟Support FunASR: <a href='https://github.com/alibaba-damo-academy/FunASR/stargazers'><img src='https://img.shields.io/github/stars/alibaba-damo-academy/FunASR.svg?style=social'></a>
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=modelscope/FunClip&type=Date)](https://star-history.com/#modelscope/FunClip&Date)
