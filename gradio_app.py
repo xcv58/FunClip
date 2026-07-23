@@ -27,6 +27,13 @@ try:
     from funclip.llm.srt_corrector import correct_srt_content
     from funclip.llm.chinese_converter import convert_to_traditional
     from funclip.llm.srt_translator import translate_srt_to_english
+    from funclip.service_retention import (
+        MediaCleanupError,
+        UploadPathError,
+        cleanup_media_files,
+        run_with_media_cleanup,
+        validate_gradio_upload_path,
+    )
 except ImportError as e:
     print(f"Error importing modules: {e}")
     sys.exit(1)
@@ -231,15 +238,23 @@ def stage_async_uploaded_file(file_path):
     """Copy uploaded file to a stable temp path for background processing."""
     if not file_path:
         raise gr.Error("No file uploaded.")
-    source = str(file_path)
-    if not os.path.exists(source):
-        raise gr.Error(f"Uploaded file path does not exist: {source}")
-    base_name = sanitize_base_name(os.path.splitext(os.path.basename(source))[0])
-    _, ext = os.path.splitext(source)
+    try:
+        source = validate_gradio_upload_path(str(file_path))
+    except UploadPathError as exc:
+        raise gr.Error("Uploaded media is not in the managed service cache.") from exc
+    base_name = sanitize_base_name(source.stem)
+    ext = source.suffix
     fd, staged_path = tempfile.mkstemp(prefix=f"funclip_job_{base_name}_", suffix=ext)
     os.close(fd)
-    shutil.copy2(source, staged_path)
-    return staged_path
+    try:
+        shutil.copy2(source, staged_path)
+    except Exception:
+        try:
+            os.remove(staged_path)
+        except OSError:
+            pass
+        raise
+    return staged_path, str(source)
 
 # --- 4. PROCESSING FUNCTIONS ---
 
@@ -900,8 +915,7 @@ def api_translate_srt_english(srt_files, api_key, model_name, custom_model, base
 
 def run_async_transcribe_and_correct_job(job_id, payload):
     """Background worker for transcribe + correct pipeline."""
-    cleanup_paths = payload.get("cleanup_paths", [])
-    try:
+    def process_job():
         with ASYNC_JOB_EXEC_LOCK:
             media_path = payload["file_path"]
             is_video = os.path.splitext(media_path)[1].lower() in ['.mp4', '.avi', '.mkv', '.mov']
@@ -934,26 +948,30 @@ def run_async_transcribe_and_correct_job(job_id, payload):
                 return_traditional=bool(payload.get("return_traditional", True)),
             )
             final_srt = correct_res.get("corrected_srt") or srt_content
-            complete_async_job(
-                job_id,
-                result={
-                    "transcribe": transcribe_res,
-                    "correct": correct_res,
-                    "final_srt": final_srt,
-                },
-                message="✅ Async transcribe + correction completed.",
-            )
+            return {
+                "transcribe": transcribe_res,
+                "correct": correct_res,
+                "final_srt": final_srt,
+            }
+
+    try:
+        result = run_with_media_cleanup(
+            process_job,
+            staged_path=payload["file_path"],
+            cached_upload_path=payload["cached_upload_path"],
+        )
+    except MediaCleanupError:
+        fail_async_job(job_id, "Uploaded media cleanup failed.")
     except gr.Error as e:
         fail_async_job(job_id, _normalize_error_message(e))
     except Exception as e:
         fail_async_job(job_id, _normalize_error_message(e))
-    finally:
-        for path in cleanup_paths:
-            try:
-                if path and os.path.exists(path):
-                    os.remove(path)
-            except Exception:
-                pass
+    else:
+        complete_async_job(
+            job_id,
+            result=result,
+            message="✅ Async transcribe + correction completed.",
+        )
 
 
 def run_async_srt_correct_job(job_id, payload):
@@ -1014,18 +1032,25 @@ def start_async_worker(job_id, target_fn, payload):
 
 def api_submit_transcribe_and_correct(file_path, api_key, model_name, custom_model, base_url, return_traditional):
     """Submit async transcribe+correct job and return job id for polling."""
-    staged_media_path = stage_async_uploaded_file(file_path)
-    job_id = create_async_job("transcribe_and_correct")
-    payload = {
-        "file_path": staged_media_path,
-        "api_key": api_key,
-        "model_name": model_name,
-        "custom_model": custom_model,
-        "base_url": base_url,
-        "return_traditional": return_traditional,
-        "cleanup_paths": [staged_media_path],
-    }
-    start_async_worker(job_id, run_async_transcribe_and_correct_job, payload)
+    staged_media_path, cached_upload_path = stage_async_uploaded_file(file_path)
+    try:
+        job_id = create_async_job("transcribe_and_correct")
+        payload = {
+            "file_path": staged_media_path,
+            "cached_upload_path": cached_upload_path,
+            "api_key": api_key,
+            "model_name": model_name,
+            "custom_model": custom_model,
+            "base_url": base_url,
+            "return_traditional": return_traditional,
+        }
+        start_async_worker(job_id, run_async_transcribe_and_correct_job, payload)
+    except Exception:
+        try:
+            cleanup_media_files(staged_media_path, cached_upload_path)
+        except MediaCleanupError as cleanup_error:
+            raise gr.Error("Uploaded media cleanup failed.") from cleanup_error
+        raise
     snapshot = get_async_job_snapshot(job_id, include_result=False)
     snapshot["poll_api_name"] = "/async_job_status"
     return snapshot
@@ -1060,6 +1085,7 @@ def api_async_job_status(job_id, include_result):
 
 with gr.Blocks(
     title="FunClip Pro - Gradio Edition",
+    delete_cache=(3600, 3600),
     theme=gr.themes.Soft(
         primary_hue="indigo",
         secondary_hue="purple"
