@@ -111,3 +111,6 @@ while True:
 Notes:
 - `download_path` and `corrected_traditional_file_path` are Gradio-served artifacts and may not be directly readable on the caller filesystem.
 - For endpoints that expect multiple files, pass a list even for one file.
+- `/submit_transcribe_and_correct` copies an upload into a private staging file, then deletes both that stage and the exact Gradio-cached input before publishing either `completed` or `failed`. A cleanup error fails the job instead of reporting a clean terminal result.
+- The async cleanup accepts only regular, nonsymlink files contained by Gradio's configured upload root. It never deletes an arbitrary caller-supplied path.
+- Gradio additionally checks hourly for cache files older than one hour and clears its cache when the service shuts down. These are fallback bounds for abandoned/non-async uploads; the async endpoint performs terminal cleanup immediately.
