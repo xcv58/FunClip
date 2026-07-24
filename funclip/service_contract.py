@@ -3,6 +3,32 @@
 from collections.abc import Mapping
 
 
+def normalized_recognition_payload(recognition_result):
+    """Validate one FunASR result and normalize a proven empty recognition."""
+    if (
+        not isinstance(recognition_result, list)
+        or len(recognition_result) != 1
+        or not isinstance(recognition_result[0], Mapping)
+    ):
+        raise ValueError("Recognition result has an invalid shape.")
+    payload = dict(recognition_result[0])
+    sentences = payload.get("sentence_info")
+    if sentences is None:
+        speech_fields = (
+            payload.get("text"),
+            payload.get("raw_text"),
+            payload.get("timestamp"),
+        )
+        if any(value for value in speech_fields):
+            raise ValueError(
+                "Recognition result omitted sentence timing for detected speech."
+            )
+        payload["sentence_info"] = []
+    elif not isinstance(sentences, list):
+        raise ValueError("Recognition sentence timing must be a list.")
+    return payload
+
+
 def no_speech_result(transcribe_result):
     """Return an explicit no-speech result after a successful empty transcription."""
     if not isinstance(transcribe_result, Mapping):

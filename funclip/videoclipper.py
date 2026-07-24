@@ -20,6 +20,7 @@ from moviepy.video.compositing.CompositeVideoClip import CompositeVideoClip
 from utils.subtitle_utils import generate_srt, generate_srt_clip
 from utils.argparse_tools import ArgumentParser, get_commandline_args
 from utils.trans_utils import pre_proc, proc, write_state, load_state, proc_spk, convert_pcm_to_float
+from funclip.service_contract import normalized_recognition_payload
 
 
 class VideoClipper():
@@ -54,8 +55,9 @@ class VideoClipper():
                                                     en_post_proc=self.lang=='en',
                                                     cache={},
                                                     batch_size_s=300)
-            res_srt = generate_srt(rec_result[0]['sentence_info'])
-            state['sd_sentences'] = rec_result[0]['sentence_info']
+            recognition = normalized_recognition_payload(rec_result)
+            res_srt = generate_srt(recognition['sentence_info'])
+            state['sd_sentences'] = recognition['sentence_info']
         else:
             rec_result = self.funasr_model.generate(data, 
                                                     return_spk_res=False, 
@@ -68,11 +70,12 @@ class VideoClipper():
                                                     en_post_proc=self.lang=='en',
                                                     cache={},
                                                     batch_size_s=300)
-            res_srt = generate_srt(rec_result[0]['sentence_info'])
-        state['recog_res_raw'] = rec_result[0]['raw_text']
-        state['timestamp'] = rec_result[0]['timestamp']
-        state['sentences'] = rec_result[0]['sentence_info']
-        res_text = rec_result[0]['text']
+            recognition = normalized_recognition_payload(rec_result)
+            res_srt = generate_srt(recognition['sentence_info'])
+        state['recog_res_raw'] = recognition.get('raw_text', '')
+        state['timestamp'] = recognition.get('timestamp', [])
+        state['sentences'] = recognition['sentence_info']
+        res_text = recognition.get('text', '')
         return res_text, res_srt, state
 
     def clip(self, dest_text, start_ost, end_ost, state, dest_spk=None, output_dir=None, timestamp_list=None):

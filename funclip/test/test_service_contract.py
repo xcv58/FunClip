@@ -2,11 +2,28 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from funclip.service_contract import no_speech_result, speech_result
+from funclip.service_contract import (
+    no_speech_result,
+    normalized_recognition_payload,
+    speech_result,
+)
 from funclip.service_retention import run_with_media_cleanup
 
 
 class ServiceContractTests(unittest.TestCase):
+    def test_model_result_without_speech_normalizes_to_empty_sentences(self):
+        payload = normalized_recognition_payload([
+            {"text": "", "raw_text": "", "timestamp": []}
+        ])
+
+        self.assertEqual(payload["sentence_info"], [])
+
+    def test_detected_speech_without_sentence_timing_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "omitted sentence timing"):
+            normalized_recognition_payload([
+                {"text": "spoken", "raw_text": "spoken", "timestamp": [0, 1]}
+            ])
+
     def test_empty_success_becomes_explicit_no_speech_without_correction(self):
         transcribe = {
             "srt_content": " \n",
