@@ -34,6 +34,7 @@ try:
         run_with_media_cleanup,
         validate_gradio_upload_path,
     )
+    from funclip.service_contract import no_speech_result, speech_result
 except ImportError as e:
     print(f"Error importing modules: {e}")
     sys.exit(1)
@@ -929,8 +930,10 @@ def run_async_transcribe_and_correct_job(job_id, payload):
             )
             transcribe_res = api_transcribe(media_path)
             srt_content = transcribe_res.get("srt_content", "")
-            if not isinstance(srt_content, str) or not srt_content.strip():
-                raise RuntimeError("Transcription returned empty SRT content.")
+            if not isinstance(srt_content, str):
+                raise RuntimeError("Transcription returned invalid SRT content.")
+            if not srt_content.strip():
+                return no_speech_result(transcribe_res)
 
             set_async_stage(
                 job_id,
@@ -947,12 +950,7 @@ def run_async_transcribe_and_correct_job(job_id, payload):
                 base_url=payload.get("base_url", ""),
                 return_traditional=bool(payload.get("return_traditional", True)),
             )
-            final_srt = correct_res.get("corrected_srt") or srt_content
-            return {
-                "transcribe": transcribe_res,
-                "correct": correct_res,
-                "final_srt": final_srt,
-            }
+            return speech_result(transcribe_res, correct_res)
 
     try:
         result = run_with_media_cleanup(
