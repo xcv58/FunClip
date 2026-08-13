@@ -30,6 +30,7 @@
 - FunClip集成了[CAM++](https://modelscope.cn/models/iic/speech_campplus_sv_zh-cn_16k-common/summary)说话人识别模型，用户可以将自动识别出的说话人ID作为裁剪目标，将某一说话人的段落裁剪出来。
 - 通过Gradio交互实现上述功能，安装简单使用方便，并且可以在服务端搭建服务通过浏览器使用。
 - FunClip支持多段自由剪辑，并且会自动返回全视频SRT字幕、目标段落SRT字幕，使用简单方便。
+- FunClip可从最新的繁体中文字幕或用户上传的中文字幕SRT生成并校验YouTube视频章节文本。
 
 欢迎体验使用，欢迎提出关于字幕生成或语音识别的需求与宝贵建议~
 
