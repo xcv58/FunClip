@@ -27,6 +27,9 @@ LLM_REQUEST_TIMEOUT_SECONDS = max(
 LLM_MAX_RETRIES = max(
     0, min(2, int(os.getenv("FUNCLIP_CHAPTER_LLM_MAX_RETRIES", "1")))
 )
+LLM_VALIDATION_RETRIES = max(
+    0, min(2, int(os.getenv("FUNCLIP_CHAPTER_VALIDATION_RETRIES", "1")))
+)
 MAX_CHAPTER_RESPONSE_CHARACTERS = 20_000
 MAX_CHAPTER_RESPONSE_UTF8_BYTES = 60_000
 MAX_EDITED_CHAPTER_CHARACTERS = 10_000
@@ -628,6 +631,7 @@ def build_chapter_prompt(
         "Find major semantic topic changes, not arbitrary time intervals. Return JSON only with this exact shape: "
         '{"chapters":[{"cue_id":1,"title":"章節標題"}]}. '
         "Every cue_id must be copied from the transcript. The first chapter must use the first transcript cue. "
+        "If that first cue is only a greeting or filler, title the substantive section that begins there using nearby transcript content; never echo the greeting as its title. "
         "Use short, specific Traditional Chinese titles without timestamps, numbering, markdown, or emojis. "
         "Never use generic labels such as 開場, 第一章, 第二部分, 章節一, or 總結. "
         "Return at least three chapters in ascending cue order, keep chapters comfortably spaced, and never invent content."
@@ -642,6 +646,18 @@ def build_chapter_prompt(
         "</transcript>"
     )
     return system_prompt, user_prompt
+
+
+def build_chapter_repair_prompt(validation_error: ChapterGenerationError) -> str:
+    """Ask for one fresh candidate set using only deterministic validator feedback."""
+    return (
+        "The previous candidate set failed deterministic validation: "
+        f"{validation_error}\n"
+        "Generate a completely new JSON candidate set from the original transcript. "
+        "Keep the required first cue_id, but if its text is only a greeting or filler, "
+        "name the substantive section that begins there from nearby transcript content. "
+        "Use distinct, specific Traditional Chinese titles and satisfy all spacing rules."
+    )
 
 
 def parse_chapter_response(content: str) -> list[dict]:
@@ -1364,6 +1380,7 @@ def generate_youtube_chapters(
     video_duration_ms: int | None = None,
     request_timeout_seconds: float = LLM_REQUEST_TIMEOUT_SECONDS,
     max_retries: int = LLM_MAX_RETRIES,
+    validation_retries: int = LLM_VALIDATION_RETRIES,
     pre_completion_check: Callable[[], bool] | None = None,
 ) -> dict:
     """Generate semantically selected and deterministically validated chapters."""
@@ -1377,12 +1394,21 @@ def generate_youtube_chapters(
     system_prompt, user_prompt = build_chapter_prompt(
         cues, density, video_context, duration_ms
     )
+    if (
+        isinstance(validation_retries, bool)
+        or not isinstance(validation_retries, int)
+        or not 0 <= validation_retries <= 2
+    ):
+        raise ChapterGenerationError(
+            "Chapter validation retries must be an integer from 0 to 2."
+        )
+    base_messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
     request_kwargs = {
         "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
+        "messages": base_messages,
         "response_format": CHAPTER_RESPONSE_FORMAT,
         "max_tokens": MAX_CHAPTER_COMPLETION_TOKENS,
         "timeout": request_timeout_seconds,
@@ -1393,26 +1419,54 @@ def generate_youtube_chapters(
     if base_url:
         request_kwargs["base_url"] = base_url
 
-    if pre_completion_check is not None and not pre_completion_check():
-        raise ChapterGenerationError(
-            "Chapter generation was superseded before the model request started."
+    validation_error = None
+    for validation_attempt in range(validation_retries + 1):
+        if pre_completion_check is not None and not pre_completion_check():
+            raise ChapterGenerationError(
+                "Chapter generation was superseded before the model request started."
+            )
+        request_kwargs["messages"] = base_messages
+        if validation_error is not None:
+            request_kwargs["messages"] = [
+                *base_messages,
+                {
+                    "role": "user",
+                    "content": build_chapter_repair_prompt(validation_error),
+                },
+            ]
+        logging.info(
+            "Sending YouTube chapter generation request to LLM (Model: %s, validation attempt: %s/%s)",
+            model,
+            validation_attempt + 1,
+            validation_retries + 1,
         )
-    logging.info("Sending YouTube chapter generation request to LLM (Model: %s)", model)
-    response = completion(**request_kwargs)
-    raw_content = response.choices[0].message.content
-    candidates = parse_chapter_response(raw_content)
-    chapters = validate_chapter_candidates(
-        cues,
-        candidates,
-        title_transform=title_transform,
-        video_duration_ms=duration_ms,
-    )
-    return {
-        "chapters": chapters,
-        "chapters_text": render_chapters_text(chapters),
-        "duration_ms": duration_ms,
-        "model": response.get("model") if hasattr(response, "get") else getattr(response, "model", model),
-    }
+        response = completion(**request_kwargs)
+        raw_content = response.choices[0].message.content
+        try:
+            candidates = parse_chapter_response(raw_content)
+            chapters = validate_chapter_candidates(
+                cues,
+                candidates,
+                title_transform=title_transform,
+                video_duration_ms=duration_ms,
+            )
+        except ChapterGenerationError as exc:
+            if validation_attempt >= validation_retries:
+                raise
+            validation_error = exc
+            logging.warning(
+                "Retrying YouTube chapter generation after deterministic validation failure: %s",
+                exc,
+            )
+            continue
+        return {
+            "chapters": chapters,
+            "chapters_text": render_chapters_text(chapters),
+            "duration_ms": duration_ms,
+            "model": response.get("model") if hasattr(response, "get") else getattr(response, "model", model),
+        }
+
+    raise AssertionError("Chapter validation retry loop exited unexpectedly.")
 
 
 def validate_llm_model_identifier(value: object) -> str:

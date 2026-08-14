@@ -1436,6 +1436,77 @@ Final English section
         self.assertIn("Transcript duration: 00:40", prompt)
 
     @patch("funclip.llm.youtube_chapters.completion")
+    def test_validation_failure_gets_one_feedback_driven_retry(self, mock_completion):
+        invalid_payload = {
+            "chapters": [
+                {"cue_id": 1, "title": "歡迎來到今天的節目"},
+                {"cue_id": 2, "title": "解析背景脈絡"},
+                {"cue_id": 3, "title": "示範核心方法"},
+            ]
+        }
+        repaired_payload = {
+            "chapters": [
+                {"cue_id": 1, "title": "節目內容導覽"},
+                {"cue_id": 2, "title": "背景脈絡分析"},
+                {"cue_id": 3, "title": "核心方法示範"},
+            ]
+        }
+        mock_completion.side_effect = [
+            SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(
+                    content=json.dumps(invalid_payload, ensure_ascii=False)
+                ))],
+                model="test-model",
+            ),
+            SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(
+                    content=json.dumps(repaired_payload, ensure_ascii=False)
+                ))],
+                model="test-model",
+            ),
+        ]
+
+        result = generate_youtube_chapters(
+            SAMPLE_SRT,
+            model="test-model",
+            title_transform=normalize_traditional_for_validation,
+        )
+
+        self.assertEqual(result["chapters"][0]["title"], "節目內容導覽")
+        self.assertEqual(mock_completion.call_count, 2)
+        repair_prompt = mock_completion.call_args.kwargs["messages"][-1]["content"]
+        self.assertIn("specific, meaningful Chinese content", repair_prompt)
+        self.assertIn("greeting or filler", repair_prompt)
+
+    @patch("funclip.llm.youtube_chapters.completion")
+    def test_validation_retry_is_bounded(self, mock_completion):
+        invalid_payload = {
+            "chapters": [
+                {"cue_id": 1, "title": "歡迎來到今天的節目"},
+                {"cue_id": 2, "title": "解析背景脈絡"},
+                {"cue_id": 3, "title": "示範核心方法"},
+            ]
+        }
+        invalid_response = SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(
+                content=json.dumps(invalid_payload, ensure_ascii=False)
+            ))],
+            model="test-model",
+        )
+        mock_completion.return_value = invalid_response
+
+        with self.assertRaisesRegex(
+            ChapterGenerationError, "specific, meaningful Chinese content"
+        ):
+            generate_youtube_chapters(
+                SAMPLE_SRT,
+                model="test-model",
+                title_transform=normalize_traditional_for_validation,
+            )
+
+        self.assertEqual(mock_completion.call_count, 2)
+
+    @patch("funclip.llm.youtube_chapters.completion")
     def test_unsafe_prompt_source_and_context_are_rejected_before_llm(self, mock_completion):
         unsafe_source_fragments = [
             "\x00",
