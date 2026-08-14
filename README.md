@@ -31,7 +31,7 @@
 - FunClip integrates the [CAM++](https://modelscope.cn/models/iic/speech_campplus_sv_zh-cn_16k-common/summary) speaker recognition model, enabling users to use the auto-recognized speaker ID as the target for trimming, to clip segments from a specific speaker.
 - The functionalities are realized through Gradio interaction, offering simple installation and ease of use. It can also be deployed on a server and accessed via a browser.
 - FunClip supports multi-segment free clipping and automatically returns full video SRT subtitles and target segment SRT subtitles, offering a simple and convenient user experience.
-- FunClip can generate validated Traditional Chinese YouTube chapter text from the latest finalized subtitles or an uploaded Chinese SRT file.
+- FunClip can generate validated Traditional Chinese YouTube chapter text from the latest finalized subtitles or an uploaded Chinese SRT file; Simplified Chinese input is converted locally to Traditional Chinese automatically.
 
 <a name="What's New"></a>
 ## What's New🚀

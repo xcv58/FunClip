@@ -82,7 +82,8 @@ en_res = client.predict(
 )
 print(en_res["download_path"])
 
-# 5) Generate validated Traditional Chinese YouTube chapters from SRT text
+# 5) Generate validated Traditional Chinese YouTube chapters from Chinese SRT text
+# Simplified Chinese input is converted locally to Traditional Chinese automatically.
 chapter_res = client.predict(
     translated_srt or srt_text,  # srt_content
     "Auto",                     # density: Concise, Auto, or Detailed

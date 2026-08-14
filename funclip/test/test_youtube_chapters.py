@@ -89,6 +89,21 @@ class YoutubeChapterParsingTests(unittest.TestCase):
                 f"1\n{'9' * 5_000}:00:00,000 --> 00:00:08,000\n壞字幕\n"
             )
 
+    def test_parse_srt_repairs_zero_length_and_subsecond_reversed_cues(self):
+        cues = parse_srt(
+            "1\n00:00:00,500 --> 00:00:00,500\n零長度字幕\n\n"
+            "2\n00:00:12,750 --> 00:00:12,000\n毫秒倒置字幕\n"
+        )
+
+        self.assertEqual(cues[0].end_ms, cues[0].start_ms + 1)
+        self.assertEqual(cues[1].end_ms, cues[1].start_ms + 1)
+
+    def test_parse_srt_still_rejects_one_second_reversal(self):
+        with self.assertRaisesRegex(ChapterGenerationError, "must end after"):
+            parse_srt(
+                "1\n00:00:05,000 --> 00:00:04,000\n倒置一秒字幕\n"
+            )
+
     def test_parse_srt_rejects_tabs_in_every_structural_position(self):
         tabbed_srts = [
             "1\n00:00:00,000 --> 00:00:08,000\n\t字幕內容\n",
@@ -401,6 +416,29 @@ class YoutubeChapterValidationTests(unittest.TestCase):
             render_chapters_text(chapters),
             "00:00 節目導覽\n00:12 太接近\n00:24 技術分析\n00:36 實作建議",
         )
+
+    def test_validator_accepts_alternate_beginning_cue_within_first_second(self):
+        cues = [
+            SubtitleCue(1, 100, 500, "嗯"),
+            SubtitleCue(2, 750, 8_000, "節目主題導覽"),
+            SubtitleCue(3, 12_000, 20_000, "背景脈絡分析"),
+            SubtitleCue(4, 24_000, 35_000, "核心方法建議"),
+        ]
+        chapters = validate_chapter_candidates(
+            cues,
+            [
+                {"cue_id": 2, "title": "節目主題導覽"},
+                {"cue_id": 3, "title": "背景脈絡分析"},
+                {"cue_id": 4, "title": "核心方法建議"},
+            ],
+            title_transform=lambda title: title,
+        )
+
+        self.assertEqual(
+            [item["start_ms"] for item in chapters],
+            [0, 12_000, 24_000],
+        )
+        self.assertEqual(render_chapters_text(chapters).splitlines()[0], "00:00 節目主題導覽")
 
     def test_validator_rejects_raw_model_title_repairs(self):
         invalid_titles = [

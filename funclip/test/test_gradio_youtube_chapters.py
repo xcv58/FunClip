@@ -1489,6 +1489,97 @@ class GradioYoutubeChapterIntegrationTests(unittest.TestCase):
             self.assertTrue(gradio_app.remove_owned_chapter_artifact(result))
             self.assertFalse(output_path.exists())
 
+    def test_uploaded_srt_ignores_default_zero_video_duration(self):
+        chapters_text = "00:00 節目導覽\n00:12 背景脈絡\n00:24 核心方法"
+        generated = {
+            "chapters_text": chapters_text,
+            "chapters": [
+                {"start_ms": 0, "title": "節目導覽"},
+                {"start_ms": 12_000, "title": "背景脈絡"},
+                {"start_ms": 24_000, "title": "核心方法"},
+            ],
+            "duration_ms": 48_000,
+        }
+        with patch.object(
+            gradio_app,
+            "resolve_chapter_srt",
+            return_value=(SIMPLE_SRT, "video", "uploaded SRT"),
+        ), patch.object(
+            gradio_app,
+            "resolve_llm_config",
+            return_value=("key", "", "model"),
+        ), patch.object(
+            gradio_app,
+            "generate_youtube_chapters",
+            return_value=generated.copy(),
+        ) as generate_chapters, patch.object(
+            gradio_app,
+            "create_owned_chapter_artifact",
+            return_value="/tmp/video_youtube_chapters.txt",
+        ):
+            _, _, status, _ = gradio_app.run_youtube_chapter_generation(
+                "Upload Chinese SRT",
+                {},
+                "/tmp/video.srt",
+                "Auto",
+                "",
+                "key",
+                "model",
+                "",
+                "",
+                0.0,
+            )
+
+        self.assertIsNone(
+            generate_chapters.call_args.kwargs["video_duration_ms"]
+        )
+        self.assertIn("SRT timeline extent", status)
+
+    def test_uploaded_simplified_srt_is_converted_before_generation(self):
+        generated = {
+            "chapters_text": "00:00 節目導覽\n00:12 背景脈絡\n00:24 核心方法",
+            "chapters": [
+                {"start_ms": 0, "title": "節目導覽"},
+                {"start_ms": 12_000, "title": "背景脈絡"},
+                {"start_ms": 24_000, "title": "核心方法"},
+            ],
+            "duration_ms": 48_000,
+        }
+        with patch.object(
+            gradio_app,
+            "resolve_chapter_srt",
+            return_value=(SIMPLE_SRT, "video", "uploaded SRT"),
+        ), patch.object(
+            gradio_app,
+            "resolve_llm_config",
+            return_value=("key", "", "model"),
+        ), patch.object(
+            gradio_app,
+            "generate_youtube_chapters",
+            return_value=generated.copy(),
+        ) as generate_chapters, patch.object(
+            gradio_app,
+            "create_owned_chapter_artifact",
+            return_value="/tmp/video_youtube_chapters.txt",
+        ):
+            _, _, status, result = gradio_app.run_youtube_chapter_generation(
+                "Upload Chinese SRT",
+                {},
+                "/tmp/video.srt",
+                "Auto",
+                "",
+                "key",
+                "model",
+                "",
+                "",
+                0.0,
+            )
+
+        self.assertIn("簡體中文字幕", generate_chapters.call_args.args[0])
+        self.assertNotIn("简体中文字幕", generate_chapters.call_args.args[0])
+        self.assertTrue(result["input_converted_to_traditional"])
+        self.assertIn("automatically converted", status)
+
     def test_served_gradio_download_is_the_exact_owned_artifact(self):
         output_path = gradio_app.create_owned_chapter_artifact(
             "video", "youtube_chapters_", "00:00 節目導覽"
@@ -2467,6 +2558,8 @@ class GradioYoutubeChapterIntegrationTests(unittest.TestCase):
         self.assertIn("status", response)
         self.assertEqual(generate.call_args.kwargs["density"], "Auto")
         self.assertIsNone(generate.call_args.kwargs["video_duration_ms"])
+        self.assertIn("簡體中文字幕", generate.call_args.args[0])
+        self.assertTrue(response["input_converted_to_traditional"])
 
         correction_result = (
             "original", "corrected", "traditional", "diff", "orig-path",

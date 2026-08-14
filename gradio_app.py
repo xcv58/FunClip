@@ -2447,6 +2447,12 @@ def resolve_chapter_srt(
     return srt_content, base_name, "latest finalized Traditional Chinese SRT"
 
 
+def prepare_chapter_srt_for_generation(srt_content):
+    """Convert Simplified Chinese source text before prompting the chapter model."""
+    traditional_srt = normalize_traditional_for_validation(srt_content)
+    return traditional_srt, traditional_srt != srt_content
+
+
 def run_youtube_chapter_generation(
     source_choice,
     session_state,
@@ -2470,6 +2476,9 @@ def run_youtube_chapter_generation(
         request,
         expected_chapter_revision,
     )
+    srt_content, input_converted_to_traditional = (
+        prepare_chapter_srt_for_generation(srt_content)
+    )
     # Bound upload/media-derived stems before the paid provider call so an
     # otherwise-valid generation cannot fail only while creating its download.
     base_name = sanitize_base_name(base_name)
@@ -2480,7 +2489,9 @@ def run_youtube_chapter_generation(
         base_url=base_url,
     )
     video_duration_ms = None
-    if video_duration_seconds not in (None, ""):
+    if isinstance(video_duration_seconds, bool):
+        video_duration_ms = parse_video_duration_seconds(video_duration_seconds)
+    elif video_duration_seconds not in (None, "", 0, 0.0):
         video_duration_ms = parse_video_duration_seconds(video_duration_seconds)
     elif source_choice != "Upload Chinese SRT":
         stored_duration = (session_state or {}).get(
@@ -2507,6 +2518,7 @@ def run_youtube_chapter_generation(
     )
     result["base_name"] = base_name
     result["source"] = source_label
+    result["input_converted_to_traditional"] = input_converted_to_traditional
     result["valid"] = True
     output_path = create_owned_chapter_artifact(
         base_name, "youtube_chapters_", result["chapters_text"]
@@ -2519,6 +2531,11 @@ def run_youtube_chapter_generation(
         f"✅ Valid for YouTube: {len(result['chapters'])} chapters generated from {source_label}. "
         f"The first timestamp is 00:00 and every chapter is at least 10 seconds using {duration_source}."
     )
+    if input_converted_to_traditional:
+        status += (
+            " Simplified Chinese characters were automatically converted to "
+            "Traditional Chinese before generation."
+        )
     return result["chapters_text"], output_path, status, result
 
 
@@ -3112,6 +3129,9 @@ def api_youtube_chapters(
     ):
         if not srt_content or not srt_content.strip():
             raise gr.Error("No SRT content provided.")
+        srt_content, input_converted_to_traditional = (
+            prepare_chapter_srt_for_generation(srt_content)
+        )
         eff_api_key, eff_base_url, effective_model = resolve_llm_config(
             api_key=api_key,
             model_name=model_name,
@@ -3148,6 +3168,7 @@ def api_youtube_chapters(
             ) from None
         return {
             **result,
+            "input_converted_to_traditional": input_converted_to_traditional,
             "status": f"✅ Generated {len(result['chapters'])} valid YouTube chapters.",
         }
 
@@ -3475,7 +3496,7 @@ with gr.Blocks(
         ],
         outputs=[api_youtube_chapters_output],
         api_name="youtube_chapters",
-        api_description="Generate validated Traditional Chinese YouTube chapter text from SRT content, with optional video duration in seconds.",
+        api_description="Generate validated Traditional Chinese YouTube chapter text from Chinese SRT content. Simplified Chinese input is converted automatically; video duration is optional.",
         concurrency_limit=CHAPTER_GENERATION_CONCURRENCY_LIMIT,
         concurrency_id="youtube_chapters",
         validator=validate_api_chapter_admission,
@@ -4275,6 +4296,7 @@ with gr.Blocks(
             gr.Markdown("### Generate YouTube video chapters from Chinese subtitles")
             gr.Markdown(
                 "Use the latest finalized Traditional Chinese SRT from the other tabs, or upload one UTF-8 Chinese SRT. "
+                "Simplified Chinese uploads are converted locally to Traditional Chinese automatically. "
                 "The result is validated against YouTube's chapter timing requirements and can be pasted into a video description."
             )
 
