@@ -48,6 +48,7 @@ MAX_VIDEO_CONTEXT_UTF8_BYTES = 6_000
 MAX_VIDEO_DURATION_MS = 12 * 60 * 60 * 1_000
 MAX_LLM_MODEL_IDENTIFIER_CHARACTERS = 200
 MAX_LLM_MODEL_IDENTIFIER_UTF8_BYTES = 512
+CHAPTER_PROMPT_REVISION = "semantic-boundaries-2026-08-23"
 GENERIC_CHAPTER_TITLES = frozenset({
     "中",
     "內容",
@@ -645,13 +646,18 @@ def build_chapter_prompt(
         "Every cue_id must be copied from the transcript. The first chapter should use the first transcript cue; "
         "if multiple cues begin within the first second, it may use any of those beginning cues. "
         "If that first cue is only a greeting or filler, title the substantive section that begins there using nearby transcript content; never echo the greeting as its title. "
+        "The first title must faithfully describe the substantive topic in the first cue and immediately following cues. If the video opens with a cold-open anecdote, name that anecdote; never replace it with the overall video context. "
+        "Anchor every later boundary to the earliest cue where a sustained new editorial section begins. Confirm it with the following cues or a clear change of scene, location, or activity; do not anchor to a later example, detail, reaction, or summary inside an already-started section. "
+        "Do not create a chapter for a brief itinerary preview, teaser, list of future destinations, or passing mention that the next cues leave quickly. Fold it into the surrounding introduction and create the destination chapter only when the video actually arrives at that sustained section. "
+        "Prefer broad coherent sections such as arrival, hotel, meal, or cultural reflection over short conversational subtopics. The target count is approximate: cover every sustained section, but never invent a weak boundary only to reach the number, and do not leave an obvious multi-minute scene or activity change unmarked. "
+        "When the ending changes into a conclusion or next-episode preview with at least ten seconds remaining, create a final chapter at the earliest cue of that ending. "
         "Use short, specific Traditional Chinese titles without timestamps, numbering, markdown, or emojis. "
         "Never use generic labels such as 開場, 第一章, 第二部分, 章節一, or 總結. "
         "Return at least three chapters in ascending cue order, keep chapters comfortably spaced, and never invent content."
     )
     user_prompt = (
         f"Requested density: {density}\n"
-        f"Target chapter count: approximately {target_count}\n"
+        f"Target chapter count: approximately {target_count}; editorial coherence is more important than reaching this number\n"
         f"Transcript duration: {format_youtube_timestamp(duration_ms)}\n"
         f"Video context: <context>{context}</context>\n"
         "Transcript:\n<transcript>\n"
@@ -1481,6 +1487,7 @@ def generate_youtube_chapters(
             "chapters_text": render_chapters_text(chapters),
             "duration_ms": duration_ms,
             "model": response.get("model") if hasattr(response, "get") else getattr(response, "model", model),
+            "prompt_revision": CHAPTER_PROMPT_REVISION,
         }
 
     raise AssertionError("Chapter validation retry loop exited unexpectedly.")

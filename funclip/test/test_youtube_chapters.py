@@ -1640,6 +1640,9 @@ Final English section
 
         self.assertTrue(result["chapters_text"].startswith("00:00 節目導覽\n"))
         self.assertEqual(len(result["chapters"]), 4)
+        self.assertEqual(
+            result["prompt_revision"], "semantic-boundaries-2026-08-23"
+        )
         request = mock_completion.call_args.kwargs
         self.assertEqual(request["api_key"], "test-key")
         self.assertEqual(request["base_url"], "https://example.test/v1")
@@ -1649,6 +1652,18 @@ Final English section
         self.assertEqual(request["num_retries"], LLM_MAX_RETRIES)
         self.assertIn("<context>測試影片</context>", request["messages"][1]["content"])
         self.assertIn("cue=4 | 00:36 | 整理實作建議", request["messages"][1]["content"])
+        system_prompt = request["messages"][0]["content"]
+        self.assertIn("opens with a cold-open anecdote", system_prompt)
+        self.assertIn("earliest cue where a sustained new editorial section begins", system_prompt)
+        self.assertIn("itinerary preview", system_prompt)
+        self.assertIn("passing mention", system_prompt)
+        self.assertIn("cover every sustained section", system_prompt)
+        self.assertIn("never invent a weak boundary", system_prompt)
+        self.assertIn("create a final chapter at the earliest cue", system_prompt)
+        self.assertIn(
+            "editorial coherence is more important than reaching this number",
+            request["messages"][1]["content"],
+        )
 
 
 if __name__ == "__main__":
