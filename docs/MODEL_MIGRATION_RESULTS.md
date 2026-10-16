@@ -41,6 +41,10 @@ Chinese wording, names, numbers and English terms still require review.
 Dense English cues can exceed the existing layout limit and fail validation;
 the migration does not change segmentation or recognition models.
 
+The subsequent [Chinese subtitle segmentation change](CHINESE_SUBTITLE_SEGMENTATION.md)
+adapts upstream's timestamp-based splitting before correction. Its implementation
+and validation status are separate from the migration results above.
+
 Raw subtitle inputs, responses and detailed local reports are retained under
 the ignored `eval/model_migration_runs/` directory. They are not part of this
 release commit. The evaluator is available as `scripts/eval_model_migration.py`;

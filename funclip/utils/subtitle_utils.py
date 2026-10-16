@@ -4,6 +4,8 @@
 #  MIT License  (https://opensource.org/licenses/MIT)
 import re
 
+from .subtitle_segmentation import split_long_chinese_sentence
+
 def time_convert(ms):
     ms = int(ms)
     tail = ms % 1000
@@ -27,16 +29,17 @@ def str2list(text):
     return elements
 
 class Text2SRT():
-    def __init__(self, text, timestamp, offset=0):
+    def __init__(self, text, timestamp, offset=0, preserve_punctuation=False):
         self.token_list = text
         self.timestamp = timestamp
+        self.preserve_punctuation = preserve_punctuation
         start, end = timestamp[0][0] - offset, timestamp[-1][1] - offset
         self.start_sec, self.end_sec = start, end
         self.start_time = time_convert(start)
         self.end_time = time_convert(end)
     def text(self):
         if isinstance(self.token_list, str):
-            return self.token_list.rstrip("、。，")
+            res = self.token_list
         else:
             res = ""
             for word in self.token_list:
@@ -44,7 +47,8 @@ class Text2SRT():
                     res += word
                 else:
                     res += " " + word
-            return res.lstrip().rstrip("、。，")
+            res = res.lstrip()
+        return res if self.preserve_punctuation else res.rstrip("、。，")
     def srt(self, acc_ost=0.0):
         return "{} --> {}\n{}\n".format(
             time_convert(self.start_sec+acc_ost*1000),
@@ -54,10 +58,20 @@ class Text2SRT():
         return (self.start_sec/1000+acc_ost, self.end_sec/1000+acc_ost)
 
 
-def generate_srt(sentence_list):
+def generate_srt(sentence_list, *, split_long_chinese=False):
+    """Render cues without changing the original ASR sentences or timestamps."""
+    sentences_to_render = sentence_list
+    if split_long_chinese:
+        sentences_to_render = (
+            cue for sentence in sentence_list
+            for cue in split_long_chinese_sentence(sentence)
+        )
     srt_total = ''
-    for i, sent in enumerate(sentence_list):
-        t2s = Text2SRT(sent['text'], sent['timestamp'])
+    for i, sent in enumerate(sentences_to_render):
+        t2s = Text2SRT(
+            sent['text'], sent['timestamp'],
+            preserve_punctuation=split_long_chinese,
+        )
         if 'spk' in sent:
             srt_total += "{}  spk{}\n{}".format(i + 1, sent['spk'], t2s.srt())
         else:

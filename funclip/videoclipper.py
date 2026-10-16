@@ -56,7 +56,6 @@ class VideoClipper():
                                                     cache={},
                                                     batch_size_s=300)
             recognition = normalized_recognition_payload(rec_result)
-            res_srt = generate_srt(recognition['sentence_info'])
             state['sd_sentences'] = recognition['sentence_info']
         else:
             rec_result = self.funasr_model.generate(data, 
@@ -71,7 +70,9 @@ class VideoClipper():
                                                     cache={},
                                                     batch_size_s=300)
             recognition = normalized_recognition_payload(rec_result)
-            res_srt = generate_srt(recognition['sentence_info'])
+        res_srt = generate_srt(
+            recognition['sentence_info'], split_long_chinese=self.lang == 'zh'
+        )
         state['recog_res_raw'] = recognition.get('raw_text', '')
         state['timestamp'] = recognition.get('timestamp', [])
         state['sentences'] = recognition['sentence_info']

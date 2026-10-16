@@ -109,6 +109,11 @@ Deploy the prepared changes before expecting these additional fields from a host
   existed; unavailable fields are null. Timing precision depends on the ASR output.
   Audio arrays and unrelated session state are excluded. The JSON file is a temporary
   server-side artifact; persist the inline evidence in your own job record for durable use.
+- Chinese transcription renders long sentences into shorter cues using aligned ASR
+  token timings before correction. `sentence_info` retains the original ASR sentences;
+  `original_srt` and its hash describe the rendered, pre-correction SRT, so cue and
+  sentence counts may differ. Punctuation is retained. Unaligned sentences remain
+  intact. See [Chinese subtitle segmentation](CHINESE_SUBTITLE_SEGMENTATION.md).
 - Correction sends batches of at most 40 cue texts (4,000 text characters), with two
   neighboring cues on each side as read-only context. The model returns JSON containing
   only `cue_id` and corrected `text`. FunClip reconstructs the original cue headers and
