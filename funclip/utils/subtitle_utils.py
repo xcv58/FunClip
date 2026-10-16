@@ -5,6 +5,7 @@
 import re
 
 from .subtitle_segmentation import split_long_chinese_sentence
+from funclip.subtitle_style import SubtitleFormattingError, format_subtitle_text
 
 def time_convert(ms):
     ms = int(ms)
@@ -29,10 +30,10 @@ def str2list(text):
     return elements
 
 class Text2SRT():
-    def __init__(self, text, timestamp, offset=0, preserve_punctuation=False):
+    def __init__(self, text, timestamp, offset=0, format_output=True):
         self.token_list = text
         self.timestamp = timestamp
-        self.preserve_punctuation = preserve_punctuation
+        self.format_output = format_output
         start, end = timestamp[0][0] - offset, timestamp[-1][1] - offset
         self.start_sec, self.end_sec = start, end
         self.start_time = time_convert(start)
@@ -48,7 +49,7 @@ class Text2SRT():
                 else:
                     res += " " + word
             res = res.lstrip()
-        return res if self.preserve_punctuation else res.rstrip("、。，")
+        return format_subtitle_text(res) if self.format_output else res
     def srt(self, acc_ost=0.0):
         return "{} --> {}\n{}\n".format(
             time_convert(self.start_sec+acc_ost*1000),
@@ -58,7 +59,7 @@ class Text2SRT():
         return (self.start_sec/1000+acc_ost, self.end_sec/1000+acc_ost)
 
 
-def generate_srt(sentence_list, *, split_long_chinese=False):
+def generate_srt(sentence_list, *, split_long_chinese=False, format_output=True):
     """Render cues without changing the original ASR sentences or timestamps."""
     sentences_to_render = sentence_list
     if split_long_chinese:
@@ -70,12 +71,16 @@ def generate_srt(sentence_list, *, split_long_chinese=False):
     for i, sent in enumerate(sentences_to_render):
         t2s = Text2SRT(
             sent['text'], sent['timestamp'],
-            preserve_punctuation=split_long_chinese,
+            format_output=format_output,
         )
+        try:
+            rendered = t2s.srt()
+        except SubtitleFormattingError as exc:
+            raise SubtitleFormattingError(f"Cue {i + 1} requires review: {exc}") from exc
         if 'spk' in sent:
-            srt_total += "{}  spk{}\n{}".format(i + 1, sent['spk'], t2s.srt())
+            srt_total += "{}  spk{}\n{}".format(i + 1, sent['spk'], rendered)
         else:
-            srt_total += "{}\n{}\n".format(i + 1, t2s.srt())
+            srt_total += "{}\n{}\n".format(i + 1, rendered)
     return srt_total
 
 def generate_srt_clip(sentence_list, start, end, begin_index=0, time_acc_ost=0.0):
@@ -83,9 +88,9 @@ def generate_srt_clip(sentence_list, start, end, begin_index=0, time_acc_ost=0.0
     srt_total = ''
     cc = 1 + begin_index
     subs = []
-    for _, sent in enumerate(sentence_list):
-        if isinstance(sent['text'], str):
-            sent['text'] = str2list(sent['text'])
+    for _, original_sentence in enumerate(sentence_list):
+        # Clipping must not replace the original ASR text in recognition state.
+        sent = dict(original_sentence)
         if sent['timestamp'][-1][1] <= start:
             # print("CASE0")
             continue
@@ -93,13 +98,25 @@ def generate_srt_clip(sentence_list, start, end, begin_index=0, time_acc_ost=0.0
             # print("CASE4")
             break
         # parts in between
-        if (sent['timestamp'][-1][1] <= end and sent['timestamp'][0][0] > start) or (sent['timestamp'][-1][1] == end and sent['timestamp'][0][0] == start):
+        if start <= sent['timestamp'][0][0] and sent['timestamp'][-1][1] <= end:
             # print("CASE1"); import pdb; pdb.set_trace()
             t2s = Text2SRT(sent['text'], sent['timestamp'], offset=start)
             srt_total += "{}\n{}".format(cc, t2s.srt(time_acc_ost))
             subs.append((t2s.time(time_acc_ost), t2s.text()))
             cc += 1
             continue
+        if isinstance(sent['text'], str):
+            format_subtitle_text(sent['text'])
+            # Legacy partial clipping indexes punctuation-free tokens. Do not
+            # silently lose decimals, negation, percentages or contractions.
+            if re.search(r"['’‘ʼ%％‰]|[+−-]\s*\d|\d[.,，．:/]\d", sent['text']):
+                raise SubtitleFormattingError(
+                    "Partial subtitle clipping of numeric or apostrophized text requires review"
+                )
+            tokens = str2list(sent['text'])
+            if len(tokens) != len(sent['timestamp']):
+                raise SubtitleFormattingError("Partial subtitle clipping needs aligned token timestamps")
+            sent['text'] = tokens
         if sent['timestamp'][0][0] <= start:
             # print("CASE2"); import pdb; pdb.set_trace()
             if not sent['timestamp'][-1][1] > end:

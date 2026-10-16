@@ -37,6 +37,7 @@ try:
     from funclip.llm.model_config import DEFAULT_LLM_MODEL, LLM_MODEL_CHOICES, litellm_model_name
     from funclip.llm.chinese_converter import (
         convert_to_traditional,
+        convert_srt_to_traditional,
         normalize_traditional_for_validation,
     )
     from funclip.llm.srt_translator import translate_srt_to_english
@@ -62,6 +63,7 @@ try:
         validate_gradio_upload_path,
     )
     from funclip.service_contract import no_speech_result, speech_result, recognition_evidence
+    from funclip.subtitle_style import SUBTITLE_STYLE, SubtitleFormattingError
 except ImportError as e:
     print(f"Error importing modules: {e}")
     sys.exit(1)
@@ -1657,6 +1659,14 @@ def stage_async_uploaded_file(file_path):
 
 # --- 4. PROCESSING FUNCTIONS ---
 
+def save_recognition_evidence(text, srt_content, recognition_state, base_name):
+    evidence = recognition_evidence(text, srt_content, recognition_state)
+    fd, evidence_path = tempfile.mkstemp(prefix=f"transcribe_{base_name}_", suffix=".json")
+    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+        json.dump(evidence, f, ensure_ascii=False, indent=2, allow_nan=False)
+    return evidence, evidence_path
+
+
 def process_media(
     file_path,
     session_state,
@@ -1691,15 +1701,25 @@ def process_media(
     audio_clipper.lang = 'zh'
     
     # Process based on file type (reuse is_video from earlier)
-    if is_video:
-        with TemporaryDirectory() as temp_dir:
-            res_text, res_srt, recognition_state = audio_clipper.video_recog(
-                file_path, sd_switch='no', output_dir=temp_dir
-            )
-    else:
-        import librosa
-        wav, sr = librosa.load(file_path, sr=16000)
-        res_text, res_srt, recognition_state = audio_clipper.recog((sr, wav), sd_switch='no')
+    try:
+        if is_video:
+            with TemporaryDirectory() as temp_dir:
+                res_text, res_srt, recognition_state = audio_clipper.video_recog(
+                    file_path, sd_switch='no', output_dir=temp_dir
+                )
+        else:
+            import librosa
+            wav, sr = librosa.load(file_path, sr=16000)
+            res_text, res_srt, recognition_state = audio_clipper.recog((sr, wav), sd_switch='no')
+    except SubtitleFormattingError as exc:
+        recognition_state = getattr(exc, "recognition_state", {})
+        _, evidence_path = save_recognition_evidence(
+            recognition_state.get("recognition_text", ""), "", recognition_state, base_name
+        )
+        raise gr.Error(
+            f"Subtitle formatting requires review: {exc}. "
+            f"Original ASR evidence retained at {evidence_path}"
+        ) from exc
     
     # Calculate processing time
     end_time = time.time()
@@ -1708,11 +1728,10 @@ def process_media(
     
     # Store SRT for correction feature (in session state)
     session_state["original_srt"] = res_srt
-    evidence = recognition_evidence(res_text, res_srt, recognition_state)
+    evidence, evidence_path = save_recognition_evidence(
+        res_text, res_srt, recognition_state, base_name
+    )
     session_state["recognition_evidence"] = evidence
-    fd, evidence_path = tempfile.mkstemp(prefix=f"transcribe_{base_name}_", suffix=".json")
-    with os.fdopen(fd, 'w', encoding='utf-8') as f:
-        json.dump(evidence, f, ensure_ascii=False, indent=2, allow_nan=False)
     session_state["recognition_evidence_file_path"] = evidence_path
     
     # Save SRT to a unique temp file path to avoid cross-request collisions.
@@ -2028,7 +2047,7 @@ def run_llm_correction_for_content(
         raise gr.Error(format_llm_error(e, "AI auto correction"))
 
     diff_html = generate_diff_html(original_srt, corrected_srt)
-    traditional_srt = convert_to_traditional(corrected_srt)
+    traditional_srt = convert_srt_to_traditional(corrected_srt)
 
     safe_base = sanitize_base_name(base_name if base_name else "subtitles")
     orig_path = create_unique_srt_path(safe_base, prefix="orig_")
@@ -2051,6 +2070,9 @@ def run_llm_correction_for_content(
 def run_llm_correction(original_srt, api_key, model_name, custom_model, base_url, session_state, progress=gr.Progress()):
     """Run LLM-based SRT correction from transcription pipeline content."""
     base_name = session_state.get("original_filename", "subtitles") if session_state else "subtitles"
+    evidence = session_state.get("recognition_evidence", {}) if session_state else {}
+    if original_srt == evidence.get("rendered_srt"):
+        original_srt = evidence.get("original_srt", original_srt)
     return run_llm_correction_for_content(
         original_srt=original_srt,
         base_name=base_name,
@@ -2113,7 +2135,7 @@ def translate_srt_to_traditional(srt_files):
         if not srt_content.strip():
             continue
 
-        traditional_srt = convert_to_traditional(srt_content)
+        traditional_srt = convert_srt_to_traditional(srt_content)
 
         original_name = os.path.basename(srt_file)
         base_name = os.path.splitext(original_name)[0]
@@ -3055,6 +3077,7 @@ def api_srt_correct(srt_content, api_key, model_name, custom_model, base_url, re
         "original_srt": original,
         "corrected_srt": corrected,
         "correction_validation": correction_structure_report(original, corrected),
+        "subtitle_style": SUBTITLE_STYLE,
         "diff_html": diff_html,
         "original_file_path": orig_path,
         "corrected_file_path": corr_path,
@@ -3090,7 +3113,7 @@ def api_translate_srt_traditional_text(srt_files):
         if not original_srt.strip():
             continue
 
-        translated_srt = convert_to_traditional(original_srt)
+        translated_srt = convert_srt_to_traditional(original_srt)
         items.append({
             "file_name": os.path.basename(srt_path),
             "translated_srt": translated_srt,
@@ -3209,6 +3232,10 @@ def run_async_transcribe_and_correct_job(job_id, payload):
                 raise RuntimeError("Transcription returned invalid SRT content.")
             if not srt_content.strip():
                 return no_speech_result(transcribe_res)
+            evidence = transcribe_res.get("recognition_evidence") or {}
+            # Keep original phrase punctuation available to correction; formatting
+            # of the validated corrected cues is the final local display step.
+            correction_source = evidence.get("original_srt", srt_content)
 
             set_async_stage(
                 job_id,
@@ -3218,7 +3245,7 @@ def run_async_transcribe_and_correct_job(job_id, payload):
                 eta_seconds=estimate_correction_eta_seconds(srt_content),
             )
             correct_res = api_srt_correct(
-                srt_content=srt_content,
+                srt_content=correction_source,
                 api_key=payload.get("api_key", ""),
                 model_name=payload.get("model_name", DEFAULT_LLM_MODEL),
                 custom_model=payload.get("custom_model", ""),

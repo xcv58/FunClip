@@ -105,15 +105,21 @@ Deploy the prepared changes before expecting these additional fields from a host
 
 - `/transcribe` additionally returns `recognition_evidence` and `recognition_evidence_file_path`.
   The evidence snapshot contains ASR `text`, `raw_text`, `timestamp`, `sentence_info`, the
-  original SRT and its SHA-256 hash. `available_fields` identifies which ASR state fields
+  original pre-formatting ASR SRT and its SHA-256 hash. `available_fields` identifies which ASR state fields
   existed; unavailable fields are null. Timing precision depends on the ASR output.
   Audio arrays and unrelated session state are excluded. The JSON file is a temporary
   server-side artifact; persist the inline evidence in your own job record for durable use.
 - Chinese transcription renders long sentences into shorter cues using aligned ASR
   token timings before correction. `sentence_info` retains the original ASR sentences;
-  `original_srt` and its hash describe the rendered, pre-correction SRT, so cue and
-  sentence counts may differ. Punctuation is retained. Unaligned sentences remain
+  `original_srt` and its hash describe the segmented ASR SRT before display formatting,
+  so cue and sentence counts may differ. Raw punctuation is retained. Unaligned sentences remain
   intact. See [Chinese subtitle segmentation](CHINESE_SUBTITLE_SEGMENTATION.md).
+- Final subtitle bodies follow `punctuation-free-v1`, enforced locally with spaces
+  as separators. Recognition evidence additionally includes `rendered_srt`,
+  `rendered_srt_sha256` and `subtitle_style`; the rendered SRT is the public
+  punctuation-free transcription. Original source/evidence artifacts retain their
+  punctuation. Ambiguous expressions require a worded rendition or review rather
+  than blind deletion. See [the output policy](PUNCTUATION_FREE_SUBTITLES.md).
 - Correction sends batches of at most 40 cue texts (4,000 text characters), with two
   neighboring cues on each side as read-only context. The model returns JSON containing
   only `cue_id` and corrected `text`. FunClip reconstructs the original cue headers and

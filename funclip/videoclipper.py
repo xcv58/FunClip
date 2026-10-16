@@ -21,6 +21,7 @@ from utils.subtitle_utils import generate_srt, generate_srt_clip
 from utils.argparse_tools import ArgumentParser, get_commandline_args
 from utils.trans_utils import pre_proc, proc, write_state, load_state, proc_spk, convert_pcm_to_float
 from funclip.service_contract import normalized_recognition_payload
+from funclip.subtitle_style import SubtitleFormattingError
 
 
 class VideoClipper():
@@ -70,13 +71,22 @@ class VideoClipper():
                                                     cache={},
                                                     batch_size_s=300)
             recognition = normalized_recognition_payload(rec_result)
-        res_srt = generate_srt(
-            recognition['sentence_info'], split_long_chinese=self.lang == 'zh'
-        )
         state['recog_res_raw'] = recognition.get('raw_text', '')
         state['timestamp'] = recognition.get('timestamp', [])
         state['sentences'] = recognition['sentence_info']
         res_text = recognition.get('text', '')
+        state['recognition_text'] = res_text
+        state['recognition_srt'] = generate_srt(
+            recognition['sentence_info'], split_long_chinese=self.lang == 'zh',
+            format_output=False,
+        )
+        try:
+            res_srt = generate_srt(
+                recognition['sentence_info'], split_long_chinese=self.lang == 'zh'
+            )
+        except SubtitleFormattingError as exc:
+            exc.recognition_state = state
+            raise
         return res_text, res_srt, state
 
     def clip(self, dest_text, start_ost, end_ost, state, dest_spk=None, output_dir=None, timestamp_list=None):

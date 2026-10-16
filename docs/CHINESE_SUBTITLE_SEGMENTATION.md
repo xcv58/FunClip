@@ -14,7 +14,7 @@ It introduces no dependency, recognition-model or endpoint changes.
   300 ms. Search the latter half of the available cue to avoid tiny fragments;
   fall back to a token boundary when no natural break is available. This is a
   deterministic heuristic, not linguistic word segmentation.
-- Slice the original text, preserving punctuation and whitespace. Opening quote
+- Slice the original text internally, preserving punctuation and whitespace. Opening quote
   and bracket marks stay with the following text. Each resulting cue starts at
   its first token's ASR start and ends at its last token's ASR end.
 - Split only Chinese string sentences whose token count matches their timestamp
@@ -32,13 +32,18 @@ it does not have ASR word timings from which to derive new boundaries.
 The splitter creates temporary render copies. ASR text, raw text, complete token
 timestamps, sentence data and speaker clipping state remain intact. In the API
 evidence, `sentence_info` therefore remains the original ASR sentence list, while
-`original_srt` is the newly rendered, pre-correction SRT. Their counts may differ.
-The existing SRT hash covers that rendered SRT.
+`original_srt` is the segmented ASR SRT before display formatting. Their counts
+may differ. Its hash covers that diagnostic SRT. `rendered_srt` and its hash
+identify the punctuation-free transcription output.
 
 Correction still changes only cue text and preserves the IDs, timing lines and
 text-line counts of the rendered SRT. Translation and chapters receive the same
 SRT through the existing pipeline. The splitter does not correct recognition
 mistakes in names or words.
+
+The subsequent [punctuation-free display policy](PUNCTUATION_FREE_SUBTITLES.md)
+formats final cue bodies locally after segmentation and correction validation.
+Original punctuation continues to inform splitting and remains in ASR evidence.
 
 ## Validation and activation
 

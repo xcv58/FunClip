@@ -3,6 +3,7 @@
 from collections.abc import Mapping
 import hashlib
 import json
+from funclip.subtitle_style import SUBTITLE_STYLE
 
 
 def recognition_evidence(text, srt_content, recognition_state):
@@ -20,6 +21,7 @@ def recognition_evidence(text, srt_content, recognition_state):
             return json_value(value.tolist())
         raise TypeError("Unsupported value in ASR evidence.")
 
+    original_srt = state.get("recognition_srt", srt_content)
     evidence = {
         "version": 1,
         "text": text,
@@ -27,8 +29,11 @@ def recognition_evidence(text, srt_content, recognition_state):
         "timestamp": json_value(state.get("timestamp")),
         "sentence_info": json_value(state.get("sentences")),
         "available_fields": [key for key in ("recog_res_raw", "timestamp", "sentences") if key in state],
-        "original_srt": srt_content,
-        "original_srt_sha256": hashlib.sha256(srt_content.encode("utf-8")).hexdigest(),
+        "original_srt": original_srt,
+        "original_srt_sha256": hashlib.sha256(original_srt.encode("utf-8")).hexdigest(),
+        "rendered_srt": srt_content,
+        "rendered_srt_sha256": hashlib.sha256(srt_content.encode("utf-8")).hexdigest(),
+        "subtitle_style": SUBTITLE_STYLE,
     }
     # Round-trip creates an independent snapshot and verifies finite JSON values.
     return json.loads(json.dumps(evidence, ensure_ascii=False, allow_nan=False))

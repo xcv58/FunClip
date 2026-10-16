@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
+import unicodedata
 from unittest.mock import patch
 
 from funclip.llm import srt_corrector as corrector
@@ -113,7 +114,7 @@ class SRTCorrectionTests(unittest.TestCase):
                 corrector.correction_structure_report(SOURCE, output)
 
     @patch.object(corrector, "completion")
-    def test_every_real_input_round_trips_with_a_copying_provider(self, completion):
+    def test_copying_provider_preserves_structure_or_flags_unsafe_display_text(self, completion):
         def copy_cues(**kwargs):
             payload = json.loads(kwargs["messages"][1]["content"])
             return response(content=json.dumps({"corrections": payload["cues"]}, ensure_ascii=False))
@@ -122,10 +123,17 @@ class SRTCorrectionTests(unittest.TestCase):
         for path in sorted(cases.glob("*/original_transcribed.srt")):
             with self.subTest(path=path):
                 source = path.read_text()
-                result = corrector.request_srt_correction(source)
-                self.assertEqual(result["corrected_content"], source)
+                try:
+                    result = corrector.request_srt_correction(source)
+                except corrector.SRTCorrectionError as exc:
+                    self.assertIn("formatting requires review", str(exc))
+                    continue
                 self.assertTrue(result["validation"]["structure_preserved"])
-                self.assertEqual(result["validation"]["changed_cue_ids"], [])
+                _, cues = corrector.parse_correction_srt(result["corrected_content"])
+                self.assertFalse(any(
+                    unicodedata.category(char).startswith("P")
+                    for cue in cues for char in cue.text
+                ))
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ Converts Simplified Chinese to Traditional Chinese.
 """
 
 from opencc import OpenCC
+from funclip.subtitle_style import format_srt_content
 
 POST_CONVERSION_OVERRIDES = {
     "喫": "吃",
@@ -83,3 +84,10 @@ def convert_to_traditional(text: str) -> str:
     for source, target in POST_CONVERSION_OVERRIDES.items():
         converted_text = converted_text.replace(source, target)
     return converted_text
+
+
+def convert_srt_to_traditional(srt_content: str) -> str:
+    """Convert only cue bodies, then enforce their punctuation-free display style."""
+    return format_srt_content(
+        srt_content, language="zh-Hant", text_transform=convert_to_traditional
+    )

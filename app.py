@@ -59,7 +59,7 @@ def load_models():
 # --- 5. HELPER: RESET STATE ---
 def reset_state():
     """Clears results if a new file is uploaded."""
-    keys_to_clear = ['res_text', 'res_srt', 'srt_filename', 'processing_done', 'res_srt_corrected']
+    keys_to_clear = ['res_text', 'res_srt', 'recognition_srt', 'srt_filename', 'processing_done', 'res_srt_corrected']
     for key in keys_to_clear:
         if key in st.session_state:
             del st.session_state[key]
@@ -156,6 +156,7 @@ if uploaded_file is not None:
                 
                 st.session_state['res_text'] = res_text
                 st.session_state['res_srt'] = res_srt
+                st.session_state['recognition_srt'] = state.get('recognition_srt', res_srt)
                 st.session_state['srt_filename'] = f"{base_name}.srt"
                 st.session_state['processing_done'] = True
                 
@@ -233,7 +234,7 @@ if uploaded_file is not None:
             base_url_input = st.text_input("Base URL (Optional)", value=base_url_env, help="e.g. https://api.moonshot.cn/v1")
 
         if st.button("✨ Run Auto Correction"):
-            target_srt = st.session_state['res_srt']
+            target_srt = st.session_state.get('recognition_srt', st.session_state['res_srt'])
             # Use user input if provided, otherwise fall back to env (handled by litellm/backend)
             effective_api_key = api_key_input if api_key_input else None
             effective_base_url = base_url_input if base_url_input else None

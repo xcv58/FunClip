@@ -51,10 +51,10 @@ class SRTTranslatorTests(unittest.TestCase):
             translated,
             "001\n"
             "00:00:00,000 --> 00:00:02,000\n"
-            "Guess where I am?\n\n"
+            "Guess where I am\n\n"
             "7\n"
             "00:00:02.000 --> 00:00:04.000 align:start\n"
-            "I'm in Penghu.",
+            "I am in Penghu",
         )
         request = completion.call_args.kwargs
         self.assertEqual(request["api_key"], "test-key")
@@ -128,7 +128,7 @@ class SRTTranslatorTests(unittest.TestCase):
 
         translated = srt_translator.translate_srt_to_english(SAMPLE_SRT)
 
-        self.assertIn("I'm in Penghu.", translated)
+        self.assertIn("I am in Penghu", translated)
         self.assertEqual(completion.call_count, 2)
         repair_message = completion.call_args.kwargs["messages"][-1]["content"]
         self.assertIn("returned 1 translations for 2 cues", repair_message)
@@ -183,7 +183,7 @@ class SRTTranslatorTests(unittest.TestCase):
 
         translated = srt_translator.translate_srt_to_english(short_srt)
 
-        self.assertTrue(translated.endswith(translation))
+        self.assertTrue(translated.endswith("A surprise visit to the fireworks fest"))
         self.assertEqual(completion.call_count, 1)
         prompt_payload = json.loads(completion.call_args.kwargs["messages"][1]["content"])
         self.assertEqual(prompt_payload["cues"][0]["target_characters"], 23)
@@ -206,7 +206,7 @@ class SRTTranslatorTests(unittest.TestCase):
         lines = translated_text.splitlines()
         self.assertEqual(len(lines), 2)
         self.assertTrue(all(len(line) <= 42 for line in lines))
-        self.assertEqual(" ".join(lines), translation)
+        self.assertEqual(" ".join(lines), "This place feels a little like a lively night market")
         self.assertEqual(completion.call_count, 1)
 
     @patch("funclip.llm.srt_translator.completion")

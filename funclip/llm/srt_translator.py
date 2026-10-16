@@ -14,6 +14,7 @@ import unicodedata
 from dotenv import load_dotenv
 from litellm import completion
 from funclip.llm.model_config import DEFAULT_LLM_MODEL, completion_options
+from funclip.subtitle_style import SubtitleFormattingError, format_subtitle_text
 
 
 load_dotenv()
@@ -300,7 +301,12 @@ def _normalize_translation_text(cue: SRTCue, value: object) -> str:
             f"Translation for cue {cue.index} contains unsupported control characters."
         )
 
-    lines = supplied_lines
+    try:
+        formatted = format_subtitle_text(normalized, language="en")
+    except SubtitleFormattingError as exc:
+        raise SRTTranslationError(f"Translation for cue {cue.index} requires review: {exc}") from exc
+    # Contraction/number expansion can change length, so enforce layout afterward.
+    lines = formatted.split("\n")
     if (
         len(lines) > MAX_TRANSLATION_LINES
         or any(len(line) > MAX_TRANSLATION_LINE_CHARACTERS for line in lines)
@@ -458,7 +464,7 @@ def render_translated_srt(
             "Cannot render translated SRT because one or more cue translations are missing."
         )
     return "\n\n".join(
-        f"{cue.index_line}\n{cue.timing_line}\n{translations[cue.index]}"
+        f"{cue.index_line}\n{cue.timing_line}\n{_normalize_translation_text(cue, translations[cue.index])}"
         for cue in cues
     )
 

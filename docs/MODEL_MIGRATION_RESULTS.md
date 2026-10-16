@@ -44,6 +44,8 @@ the migration does not change segmentation or recognition models.
 The subsequent [Chinese subtitle segmentation change](CHINESE_SUBTITLE_SEGMENTATION.md)
 adapts upstream's timestamp-based splitting before correction. Its implementation
 and validation status are separate from the migration results above.
+The later [punctuation-free output policy](PUNCTUATION_FREE_SUBTITLES.md) formats
+final cue bodies locally while retaining original ASR evidence.
 
 Raw subtitle inputs, responses and detailed local reports are retained under
 the ignored `eval/model_migration_runs/` directory. They are not part of this

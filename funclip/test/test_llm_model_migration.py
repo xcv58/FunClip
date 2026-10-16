@@ -33,7 +33,7 @@ class ModelMigrationTests(unittest.TestCase):
         source = "1\n00:00:00,000 --> 00:00:02,000\n澎湖花火節。"
         completion.return_value = response(json.dumps({"corrections": [{"cue_id": 1, "text": "澎湖花火節。"}]}))
         result = srt_corrector.request_srt_correction(source)
-        self.assertEqual(result["corrected_content"], source)
+        self.assertEqual(result["corrected_content"], source.replace("。", ""))
         self.assertEqual(result["requested_model"], "gpt-6-luna")
         self.assertEqual(completion.call_args.kwargs["reasoning_effort"], "none")
         self.assertIn("reasoning_effort", completion.call_args.kwargs["allowed_openai_params"])
@@ -45,7 +45,7 @@ class ModelMigrationTests(unittest.TestCase):
             {"cue_id": 1, "text": "Hello."}, {"cue_id": 7, "text": "Penghu."},
         ]}))
         translated = srt_translator.translate_srt_to_english(source)
-        self.assertEqual(translated, source.replace("你好", "Hello.").replace("澎湖", "Penghu."))
+        self.assertEqual(translated, source.replace("你好", "Hello").replace("澎湖", "Penghu"))
         self.assertIn("max_completion_tokens", completion.call_args.kwargs)
         self.assertNotIn("max_tokens", completion.call_args.kwargs)
         self.assertEqual(completion.call_args.kwargs["model"], "openai/gpt-6-luna")
