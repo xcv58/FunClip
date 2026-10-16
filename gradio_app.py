@@ -9,6 +9,7 @@ import sys
 import time
 import soundfile as sf
 import difflib
+import json
 import math
 import re
 import shutil
@@ -32,7 +33,8 @@ if funclip_dir not in sys.path:
 try:
     from funclip.videoclipper import VideoClipper
     from funasr import AutoModel
-    from funclip.llm.srt_corrector import correct_srt_content
+    from funclip.llm.srt_corrector import correct_srt_content, correction_structure_report
+    from funclip.llm.model_config import DEFAULT_LLM_MODEL, LLM_MODEL_CHOICES, litellm_model_name
     from funclip.llm.chinese_converter import (
         convert_to_traditional,
         normalize_traditional_for_validation,
@@ -59,7 +61,7 @@ try:
         run_with_media_cleanup,
         validate_gradio_upload_path,
     )
-    from funclip.service_contract import no_speech_result, speech_result
+    from funclip.service_contract import no_speech_result, speech_result, recognition_evidence
 except ImportError as e:
     print(f"Error importing modules: {e}")
     sys.exit(1)
@@ -1626,6 +1628,8 @@ def get_async_job_snapshot(job_id, include_result=False):
         }
         if include_result and job.get("result") is not None:
             snapshot["result"] = job.get("result")
+        if include_result and job.get("transcription") is not None:
+            snapshot["transcription"] = job.get("transcription")
         return snapshot
 
 
@@ -1689,13 +1693,13 @@ def process_media(
     # Process based on file type (reuse is_video from earlier)
     if is_video:
         with TemporaryDirectory() as temp_dir:
-            res_text, res_srt, _ = audio_clipper.video_recog(
+            res_text, res_srt, recognition_state = audio_clipper.video_recog(
                 file_path, sd_switch='no', output_dir=temp_dir
             )
     else:
         import librosa
         wav, sr = librosa.load(file_path, sr=16000)
-        res_text, res_srt, _ = audio_clipper.recog((sr, wav), sd_switch='no')
+        res_text, res_srt, recognition_state = audio_clipper.recog((sr, wav), sd_switch='no')
     
     # Calculate processing time
     end_time = time.time()
@@ -1704,6 +1708,12 @@ def process_media(
     
     # Store SRT for correction feature (in session state)
     session_state["original_srt"] = res_srt
+    evidence = recognition_evidence(res_text, res_srt, recognition_state)
+    session_state["recognition_evidence"] = evidence
+    fd, evidence_path = tempfile.mkstemp(prefix=f"transcribe_{base_name}_", suffix=".json")
+    with os.fdopen(fd, 'w', encoding='utf-8') as f:
+        json.dump(evidence, f, ensure_ascii=False, indent=2, allow_nan=False)
+    session_state["recognition_evidence_file_path"] = evidence_path
     
     # Save SRT to a unique temp file path to avoid cross-request collisions.
     srt_path = create_unique_srt_path(base_name, prefix="transcribe_")
@@ -1717,10 +1727,11 @@ def process_media(
     formatted_text = res_text.replace("\n", "\n\n") if res_text else ""
 
     if not chapter_revision_is_current(expected_chapter_revision, request):
-        try:
-            os.remove(srt_path)
-        except OSError:
-            pass
+        for stale_path in (srt_path, evidence_path):
+            try:
+                os.remove(stale_path)
+            except OSError:
+                pass
         return _unchanged_outputs(5)
     
     return formatted_text, res_srt, srt_path, status_msg, session_state
@@ -1749,7 +1760,7 @@ def _server_openai_key_is_allowed(model, effective_base_url, env_base_url):
     ):
         return True
     try:
-        _, provider, _, _ = get_llm_provider(model_key)
+        _, provider, _, _ = get_llm_provider(litellm_model_name(model_key))
     except Exception:
         # Unknown aliases are unsafe by default. Operators can opt an exact
         # alias into their own configured gateway with FUNCLIP_TRUSTED_LLM_MODELS.
@@ -2383,7 +2394,7 @@ def safe_translate_english_wrapper(
         )
         if not chapter_revision_is_current(expected_chapter_revision, request):
             return _unchanged_outputs(5)
-        status_msg = "✅ English translation completed."
+        status_msg = "✅ English translation completed and SRT structure validated."
         return preview_original, preview_translated, download_path, translator_state, status_msg
     except gr.Error as e:
         if not chapter_revision_is_current(expected_chapter_revision, request):
@@ -3019,12 +3030,14 @@ def stage_edited_chapter_outputs(
 
 def api_transcribe(file_path):
     """API wrapper: transcribe audio/video file and return text + SRT."""
-    formatted_text, srt_content, srt_file_path, status_msg, _ = process_media(file_path, {})
+    formatted_text, srt_content, srt_file_path, status_msg, state = process_media(file_path, {})
     return {
         "text_markdown": formatted_text,
         "srt_content": srt_content,
         "srt_file_path": srt_file_path,
         "status": status_msg,
+        "recognition_evidence": state.get("recognition_evidence"),
+        "recognition_evidence_file_path": state.get("recognition_evidence_file_path"),
     }
 
 
@@ -3041,6 +3054,7 @@ def api_srt_correct(srt_content, api_key, model_name, custom_model, base_url, re
     result = {
         "original_srt": original,
         "corrected_srt": corrected,
+        "correction_validation": correction_structure_report(original, corrected),
         "diff_html": diff_html,
         "original_file_path": orig_path,
         "corrected_file_path": corr_path,
@@ -3108,7 +3122,7 @@ def api_translate_srt_english(srt_files, api_key, model_name, custom_model, base
         "preview_original": preview_original,
         "preview_translated": preview_translated,
         "download_path": download_path,
-        "status": "✅ English translation completed.",
+        "status": "✅ English translation completed and SRT structure validated.",
     }
 
 
@@ -3188,6 +3202,8 @@ def run_async_transcribe_and_correct_job(job_id, payload):
                 eta_seconds=estimate_transcribe_eta_seconds(duration_sec),
             )
             transcribe_res = api_transcribe(media_path)
+            # Keep recognition evidence inspectable even if correction or cleanup fails.
+            update_async_job(job_id, transcription=transcribe_res)
             srt_content = transcribe_res.get("srt_content", "")
             if not isinstance(srt_content, str):
                 raise RuntimeError("Transcription returned invalid SRT content.")
@@ -3204,7 +3220,7 @@ def run_async_transcribe_and_correct_job(job_id, payload):
             correct_res = api_srt_correct(
                 srt_content=srt_content,
                 api_key=payload.get("api_key", ""),
-                model_name=payload.get("model_name", "gpt-4o-mini"),
+                model_name=payload.get("model_name", DEFAULT_LLM_MODEL),
                 custom_model=payload.get("custom_model", ""),
                 base_url=payload.get("base_url", ""),
                 return_traditional=bool(payload.get("return_traditional", True)),
@@ -3249,7 +3265,7 @@ def run_async_srt_correct_job(job_id, payload):
             correct_res = api_srt_correct(
                 srt_content=srt_content,
                 api_key=payload.get("api_key", ""),
-                model_name=payload.get("model_name", "gpt-4o-mini"),
+                model_name=payload.get("model_name", DEFAULT_LLM_MODEL),
                 custom_model=payload.get("custom_model", ""),
                 base_url=payload.get("base_url", ""),
                 return_traditional=bool(payload.get("return_traditional", True)),
@@ -3400,7 +3416,7 @@ with gr.Blocks(
         api_srt_text_input = gr.TextArea()
         api_job_id_input = gr.Textbox()
         api_api_key_input = gr.Textbox(type="password")
-        api_model_name_input = gr.Textbox(value="gpt-4o-mini")
+        api_model_name_input = gr.Textbox(value=DEFAULT_LLM_MODEL)
         api_custom_model_input = gr.Textbox()
         api_base_url_input = gr.Textbox()
         api_chapter_density_input = gr.Textbox(value="Auto")
@@ -3662,8 +3678,8 @@ with gr.Blocks(
                     
                     with gr.Column(scale=1):
                         model_dropdown = gr.Dropdown(
-                            choices=["gpt-4o-mini", "gpt-4o", "gemini-1.5-flash", "Custom"],
-                            value="gpt-4o-mini",
+                            choices=list(LLM_MODEL_CHOICES),
+                            value=DEFAULT_LLM_MODEL,
                             label="Model",
                             allow_custom_value=False
                         )
@@ -3930,8 +3946,8 @@ with gr.Blocks(
                             type="password"
                         )
                         srt_model_dropdown = gr.Dropdown(
-                            choices=["gpt-4o-mini", "gpt-4o", "gemini-1.5-flash", "Custom"],
-                            value="gpt-4o-mini",
+                            choices=list(LLM_MODEL_CHOICES),
+                            value=DEFAULT_LLM_MODEL,
                             label="Model",
                             allow_custom_value=False
                         )
@@ -4022,8 +4038,8 @@ with gr.Blocks(
                     type="password"
                 )
                 translator_corr_model_dropdown = gr.Dropdown(
-                    choices=["gpt-4o-mini", "gpt-4o", "gemini-1.5-flash", "Custom"],
-                    value="gpt-4o-mini",
+                    choices=list(LLM_MODEL_CHOICES),
+                    value=DEFAULT_LLM_MODEL,
                     label="Model",
                     allow_custom_value=False
                 )
@@ -4383,8 +4399,8 @@ with gr.Blocks(
                             type="password",
                         )
                         chapter_model_dropdown = gr.Dropdown(
-                            choices=["gpt-4o-mini", "gpt-4o", "gemini-1.5-flash", "Custom"],
-                            value="gpt-4o-mini",
+                            choices=list(LLM_MODEL_CHOICES),
+                            value=DEFAULT_LLM_MODEL,
                             label="Model",
                             allow_custom_value=False,
                         )

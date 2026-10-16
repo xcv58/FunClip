@@ -1,6 +1,37 @@
 """Stable result-envelope helpers for the asynchronous service API."""
 
 from collections.abc import Mapping
+import hashlib
+import json
+
+
+def recognition_evidence(text, srt_content, recognition_state):
+    """Snapshot ASR evidence without retaining media arrays or unrelated session state."""
+    state = recognition_state or {}
+
+    def json_value(value):
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, Mapping):
+            return {str(key): json_value(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [json_value(item) for item in value]
+        if hasattr(value, "tolist"):
+            return json_value(value.tolist())
+        raise TypeError("Unsupported value in ASR evidence.")
+
+    evidence = {
+        "version": 1,
+        "text": text,
+        "raw_text": json_value(state.get("recog_res_raw")),
+        "timestamp": json_value(state.get("timestamp")),
+        "sentence_info": json_value(state.get("sentences")),
+        "available_fields": [key for key in ("recog_res_raw", "timestamp", "sentences") if key in state],
+        "original_srt": srt_content,
+        "original_srt_sha256": hashlib.sha256(srt_content.encode("utf-8")).hexdigest(),
+    }
+    # Round-trip creates an independent snapshot and verifies finite JSON values.
+    return json.loads(json.dumps(evidence, ensure_ascii=False, allow_nan=False))
 
 
 def normalized_recognition_payload(recognition_result):

@@ -21,6 +21,7 @@ try:
     from funclip.videoclipper import VideoClipper
     from funasr import AutoModel
     from funclip.llm.srt_corrector import correct_srt_content
+    from funclip.llm.model_config import DEFAULT_LLM_MODEL, LLM_MODEL_CHOICES
 except ImportError as e:
     st.error(f"Error importing modules: {e}")
     st.stop()
@@ -221,11 +222,11 @@ if uploaded_file is not None:
                     st.caption("⚠️ No System API Key found")
 
             with c2:
-                model_options = ["gpt-4o-mini", "gpt-4o", "gemini-1.5-flash", "Custom"]
+                model_options = list(LLM_MODEL_CHOICES)
                 selected_model = st.selectbox("Model Name", options=model_options, index=0, help="Select the LLM model to use")
                 
                 if selected_model == "Custom":
-                    model_input = st.text_input("Enter Custom Model Name", value="gpt-4o-mini")
+                    model_input = st.text_input("Enter Custom Model Name", value=DEFAULT_LLM_MODEL)
                 else:
                     model_input = selected_model
             

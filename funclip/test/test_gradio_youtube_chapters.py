@@ -2562,7 +2562,7 @@ class GradioYoutubeChapterIntegrationTests(unittest.TestCase):
         self.assertTrue(response["input_converted_to_traditional"])
 
         correction_result = (
-            "original", "corrected", "traditional", "diff", "orig-path",
+            SIMPLE_SRT, SIMPLE_SRT.replace("字幕", "內容"), "traditional", "diff", "orig-path",
             "corr-path", "trad-path", "done",
         )
         with patch.object(

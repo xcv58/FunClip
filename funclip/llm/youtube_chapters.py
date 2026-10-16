@@ -14,6 +14,7 @@ from typing import Callable, Iterable, Sequence
 
 from litellm import completion
 from funclip.llm.chinese_converter import canonicalize_traditional_for_comparison
+from funclip.llm.model_config import DEFAULT_LLM_MODEL, completion_options
 
 
 MIN_YOUTUBE_CHAPTER_MS = 10_000
@@ -1396,7 +1397,7 @@ def generate_youtube_chapters(
     *,
     api_key: str | None = None,
     base_url: str | None = None,
-    model: str = "gpt-4o-mini",
+    model: str = DEFAULT_LLM_MODEL,
     density: str = "Auto",
     video_context: str = "",
     title_transform: Callable[[str], str] | None = None,
@@ -1430,10 +1431,9 @@ def generate_youtube_chapters(
         {"role": "user", "content": user_prompt},
     ]
     request_kwargs = {
-        "model": model,
+        **completion_options(model, max_tokens=MAX_CHAPTER_COMPLETION_TOKENS),
         "messages": base_messages,
         "response_format": CHAPTER_RESPONSE_FORMAT,
-        "max_tokens": MAX_CHAPTER_COMPLETION_TOKENS,
         "timeout": request_timeout_seconds,
         "num_retries": max_retries,
     }

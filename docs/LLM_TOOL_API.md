@@ -53,7 +53,7 @@ srt_text = transcribe_res["srt_content"]
 correct_res = client.predict(
     srt_text,         # srt_content
     "sk-xxx",         # api_key (or "" to use server-side OPENAI_API_KEY)
-    "gpt-4o-mini",    # model_name
+    "gpt-6-luna",     # model_name
     "",               # custom_model (used only when model_name == "Custom")
     "",               # base_url
     True,             # return_traditional
@@ -75,7 +75,7 @@ if not translated_srt and trad_text_res.get("items"):
 en_res = client.predict(
     [handle_file("/absolute/path/a.srt")],  # srt_files
     "sk-xxx",                               # api_key
-    "gpt-4o-mini",                          # model_name
+    "gpt-6-luna",                           # model_name
     "",                                     # custom_model
     "",                                     # base_url
     api_name="/srt_translate_english",
@@ -89,7 +89,7 @@ chapter_res = client.predict(
     "Auto",                     # density: Concise, Auto, or Detailed
     "Optional video subject",   # video_context
     "sk-xxx",                   # api_key (or "" for the server-side key)
-    "gpt-4o-mini",              # model_name
+    "gpt-6-luna",               # model_name
     "",                         # custom_model
     "",                         # base_url
     0,                          # video_duration_seconds (0 uses SRT extent)
@@ -97,6 +97,40 @@ chapter_res = client.predict(
 )
 print(chapter_res["chapters_text"])
 ```
+
+## Correction contract: `cue-text-only-v1`
+
+The Phase 1 implementation keeps endpoint inputs and existing response fields unchanged.
+Deploy the prepared changes before expecting these additional fields from a hosted service.
+
+- `/transcribe` additionally returns `recognition_evidence` and `recognition_evidence_file_path`.
+  The evidence snapshot contains ASR `text`, `raw_text`, `timestamp`, `sentence_info`, the
+  original SRT and its SHA-256 hash. `available_fields` identifies which ASR state fields
+  existed; unavailable fields are null. Timing precision depends on the ASR output.
+  Audio arrays and unrelated session state are excluded. The JSON file is a temporary
+  server-side artifact; persist the inline evidence in your own job record for durable use.
+- Correction sends batches of at most 40 cue texts (4,000 text characters), with two
+  neighboring cues on each side as read-only context. The model returns JSON containing
+  only `cue_id` and corrected `text`. FunClip reconstructs the original cue headers and
+  timing lines locally and preserves each cue's existing number of text lines.
+- Local validation rejects missing, additional, duplicate, reordered or changed IDs,
+  empty text, new SRT timing markup, malformed JSON, refusals and truncated responses.
+  One validation repair attempt is allowed per batch. If any batch still fails, the
+  correction operation fails without publishing a partial corrected file.
+- Correction input is limited to 100,000 characters, 300,000 UTF-8 bytes, 3,000 cues and
+  500 text characters per cue. IDs must be unique positive integers and each cue must
+  end after it starts. Existing non-sequential and zero-padded IDs remain supported.
+- The selected provider/model must support the JSON schema response contract. There is
+  no fallback to asking the model to regenerate the full SRT. The default model is
+  `gpt-6-luna`. Explicit model selections are honored; clients that send
+  `gpt-4o-mini` continue to request that model until their settings are updated.
+- `/srt_correct` additionally returns `correction_validation`: protocol, cue count,
+  `structure_preserved`, changed cue IDs, source hash and corrected hash. This verifies
+  file structure only; wording, Chinese script and recognition accuracy still need review.
+- With `include_result=True`, async job status additionally exposes `transcription`
+  after ASR completes. This preserves the original SRT and evidence even when the job
+  subsequently fails correction or media cleanup. A failed job is still failed and has
+  no accepted corrected result. Existing uploaded-media cleanup remains in effect.
 
 ## 6) Async submit + poll (recommended for long jobs)
 
@@ -107,7 +141,7 @@ from gradio_client import handle_file
 submit_res = client.predict(
     handle_file("/absolute/path/input.mp3"),
     "",             # api_key
-    "gpt-4o-mini",  # model_name
+    "gpt-6-luna",   # model_name
     "",             # custom_model
     "",             # base_url
     True,           # return_traditional

@@ -21,6 +21,7 @@ TRADITIONAL_SHARED_VARIANT_PAIRS = frozenset({
 })
 TRADITIONAL_PROTECTED_TERMS = frozenset({
     "恒生銀行",
+    "佛羅里達",
     "郁達夫",
     "馥郁",
     "濃郁",

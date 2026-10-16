@@ -5,3 +5,5 @@ ClipVideo/clipvideo/output
 *__pycache__
 *.spec
 .env*
+# Generated API responses and transcript benchmark artifacts stay local.
+eval/model_migration_runs/
