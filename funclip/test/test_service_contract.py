@@ -57,6 +57,14 @@ class ServiceContractTests(unittest.TestCase):
         self.assertEqual(result["correct"], correction)
         self.assertEqual(result["final_srt"], "corrected cue")
 
+    def test_speech_result_carries_final_report_without_losing_transcription_report(self):
+        raw = {"status": "needs_review", "issues": [{"code": "long_cue"}]}
+        final = {"status": "clear", "issues": []}
+        result = speech_result({"srt_content": "original", "quality_report": raw},
+                               {"corrected_srt": "corrected", "quality_report": final})
+        self.assertEqual(result["quality_report"], final)
+        self.assertEqual(result["transcribe"]["quality_report"], raw)
+
     def test_no_speech_success_still_cleans_staged_and_uploaded_media(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

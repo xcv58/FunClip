@@ -100,6 +100,8 @@ class GradioSafeCorrectionTests(unittest.TestCase):
             result = gradio_app.api_transcribe(str(Path(directory) / "source.mp4"))
             self.assertTrue({"text_markdown", "srt_content", "srt_file_path", "status"} <= result.keys())
             self.assertEqual(result["srt_content"], SOURCE)
+            self.assertEqual(result["quality_report"]["status"], "clear")
+            self.assertFalse(result["quality_report"]["content_verified"])
             evidence_path = Path(result["recognition_evidence_file_path"])
             try:
                 self.assertEqual(json.loads(evidence_path.read_text()), result["recognition_evidence"])
@@ -122,12 +124,51 @@ class GradioSafeCorrectionTests(unittest.TestCase):
             self.assertEqual(result["original_srt"], SOURCE)
             self.assertTrue(result["correction_validation"]["structure_preserved"])
             self.assertEqual(result["correction_validation"]["cue_count"], 1)
+            self.assertEqual(result["quality_report"]["cue_count"], 1)
             self.assertIn("corrected_traditional_srt", result)
             create_file.reset_mock()
             response.choices[0].message.content = '{"corrections": []}'
             with self.assertRaises(Exception):
                 gradio_app.api_srt_correct(SOURCE, "key", "gpt-4o-mini", "", "", False)
             create_file.assert_not_called()
+
+    def test_transcription_warning_does_not_rewrite_or_drop_the_caption(self):
+        source = "125\n00:06:44,320 --> 00:10:05,130\n七龙珠之长湖夏日花火大一年级\n"
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(gradio_app, "get_media_duration_seconds", return_value=1200), \
+             patch.object(gradio_app, "VideoClipper") as clipper, \
+             patch.object(gradio_app, "create_unique_srt_path", return_value=str(Path(directory) / "raw.srt")):
+            clipper.return_value.video_recog.return_value = ("识别原文", source, {})
+            result = gradio_app.api_transcribe(str(Path(directory) / "video.mov"))
+            try:
+                self.assertEqual(result["srt_content"], source)
+                self.assertEqual(Path(result["srt_file_path"]).read_text(), source)
+                self.assertEqual(result["quality_report"]["issue_counts"], {"long_cue": 1, "sparse_long_cue": 1})
+                self.assertIn("Review suggested", result["status"])
+                self.assertIn("cue 125", result["status"])
+            finally:
+                Path(result["recognition_evidence_file_path"]).unlink(missing_ok=True)
+
+    def test_file_translation_reports_are_per_file_and_keep_inputs_unchanged(self):
+        source = "1\n00:00:00,000 --> 00:00:12,000\n郁金香花海\n"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "source.srt"
+            path.write_text(source)
+            result = gradio_app.api_translate_srt_traditional_text([str(path)])
+            self.assertIn("鬱金香", result["translated_srt"])
+            self.assertEqual(result["items"][0]["quality_report"]["issue_counts"], {"long_cue": 1})
+            self.assertIn("Review suggested", result["status"])
+            download = gradio_app.api_translate_srt_traditional([str(path)])
+            self.assertEqual(download["quality_reports"][0]["file_name"], "source.srt")
+            self.assertIn("Review suggested", download["status"])
+            english = source.replace("郁金香花海", "A sea of tulips")
+            with patch.object(gradio_app, "resolve_llm_config", return_value=("", "", "test")), \
+                 patch.object(gradio_app, "translate_srt_to_english", return_value=english):
+                translated = gradio_app.api_translate_srt_english([str(path)], "", "test", "", "")
+            self.assertEqual(translated["preview_translated"], english)
+            self.assertEqual(translated["quality_reports"][0]["report"]["issue_counts"], {"long_cue": 1})
+            self.assertIn("Review suggested", translated["status"])
+            self.assertEqual(path.read_text(), source)
 
 
 if __name__ == "__main__":

@@ -97,9 +97,12 @@ def speech_result(transcribe_result, correction_result):
         if isinstance(corrected_srt, str) and corrected_srt.strip()
         else srt_content
     )
-    return {
+    result = {
         "outcome": "speech",
         "transcribe": dict(transcribe_result),
         "correct": dict(correction_result),
         "final_srt": final_srt,
     }
+    if "quality_report" in correction_result:
+        result["quality_report"] = correction_result["quality_report"]
+    return result

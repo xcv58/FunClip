@@ -64,6 +64,7 @@ try:
     )
     from funclip.service_contract import no_speech_result, speech_result, recognition_evidence
     from funclip.subtitle_style import SUBTITLE_STYLE, SubtitleFormattingError
+    from funclip.subtitle_quality import build_srt_quality_report, quality_status_suffix
 except ImportError as e:
     print(f"Error importing modules: {e}")
     sys.exit(1)
@@ -1733,6 +1734,10 @@ def process_media(
     )
     session_state["recognition_evidence"] = evidence
     session_state["recognition_evidence_file_path"] = evidence_path
+    quality_report = build_srt_quality_report(
+        res_srt, media_duration_seconds=duration_sec if duration_sec > 0 else None
+    )
+    session_state["quality_report"] = quality_report
     
     # Save SRT to a unique temp file path to avoid cross-request collisions.
     srt_path = create_unique_srt_path(base_name, prefix="transcribe_")
@@ -1741,6 +1746,7 @@ def process_media(
     
     # Format status message
     status_msg = f"✅ Completed in {total_time:.2f}s ({speed_x:.1f}x speed)"
+    status_msg += quality_status_suffix([quality_report])
     
     # Format text with proper line breaks for Markdown display
     formatted_text = res_text.replace("\n", "\n\n") if res_text else ""
@@ -2064,6 +2070,7 @@ def run_llm_correction_for_content(
 
     elapsed_time = time.time() - start_time
     status_msg = f"✅ Correction completed in {elapsed_time:.2f}s"
+    status_msg += quality_status_suffix([build_srt_quality_report(corrected_srt)])
     return original_srt, corrected_srt, traditional_srt, diff_html, orig_path, corr_path, trad_path, status_msg
 
 
@@ -2127,6 +2134,7 @@ def translate_srt_to_traditional(srt_files):
     output_paths = []
     last_original = ""
     last_translated = ""
+    quality_reports = []
 
     for srt_file in srt_paths:
         with open(srt_file, 'r', encoding='utf-8') as f:
@@ -2145,6 +2153,7 @@ def translate_srt_to_traditional(srt_files):
             f.write(traditional_srt)
 
         output_paths.append(trad_path)
+        quality_reports.append({"file_name": original_name, "report": build_srt_quality_report(traditional_srt)})
         last_original = srt_content
         last_translated = traditional_srt
 
@@ -2164,6 +2173,7 @@ def translate_srt_to_traditional(srt_files):
     translator_state = {
         "latest_output_paths": output_paths,
         "latest_output_kind": "traditional",
+        "quality_reports": quality_reports,
         "latest_output_srt": last_translated if has_singular_input else "",
         "latest_output_base_name": base_name if has_singular_input else "",
     }
@@ -2187,6 +2197,7 @@ def translate_srt_to_english_fn(srt_files, api_key, model_name, custom_model, ba
     output_paths = []
     last_original = ""
     last_translated = ""
+    quality_reports = []
 
     for srt_file in srt_paths:
         with open(srt_file, 'r', encoding='utf-8') as f:
@@ -2214,6 +2225,7 @@ def translate_srt_to_english_fn(srt_files, api_key, model_name, custom_model, ba
             f.write(english_srt)
 
         output_paths.append(eng_path)
+        quality_reports.append({"file_name": original_name, "report": build_srt_quality_report(english_srt)})
         last_original = srt_content
         last_translated = english_srt
 
@@ -2231,7 +2243,8 @@ def translate_srt_to_english_fn(srt_files, api_key, model_name, custom_model, ba
 
     translator_state = {
         "latest_output_paths": output_paths,
-        "latest_output_kind": "english"
+        "latest_output_kind": "english",
+        "quality_reports": quality_reports,
     }
     return preview_original, preview_translated, download_path, translator_state
 
@@ -2302,6 +2315,7 @@ def run_llm_correction_for_files(
     last_original = ""
     last_corrected = ""
     seen_names = {}
+    quality_reports = []
 
     for srt_path in srt_paths:
         with open(srt_path, 'r', encoding='utf-8') as f:
@@ -2336,6 +2350,7 @@ def run_llm_correction_for_files(
 
         original_paths.append(original_output_path)
         corrected_paths.append(corrected_output_path)
+        quality_reports.append(build_srt_quality_report(corrected_srt))
         last_original = srt_content
         last_corrected = corrected_srt
 
@@ -2347,6 +2362,7 @@ def run_llm_correction_for_files(
     corrected_download = build_download_path(corrected_paths, "ai_corrected_srts.zip")
     elapsed = time.time() - start_time
     status_msg = f"✅ AI correction completed for {len(corrected_paths)} file(s) in {elapsed:.2f}s"
+    status_msg += quality_status_suffix(quality_reports)
     latest_traditional_srt = ""
     latest_traditional_base_name = ""
     if len(srt_paths) == 1 and len(corrected_paths) == 1:
@@ -2389,6 +2405,7 @@ def safe_translate_traditional_wrapper(
         if not chapter_revision_is_current(expected_chapter_revision, request):
             return _unchanged_outputs(6)
         status_msg = "✅ Translation to Traditional Chinese completed."
+        status_msg += quality_status_suffix([item["report"] for item in translator_state.get("quality_reports", [])])
         return preview_original, preview_translated, download_path, translator_state, updated_session_state, status_msg
     except gr.Error as e:
         if not chapter_revision_is_current(expected_chapter_revision, request):
@@ -2417,6 +2434,7 @@ def safe_translate_english_wrapper(
         if not chapter_revision_is_current(expected_chapter_revision, request):
             return _unchanged_outputs(5)
         status_msg = "✅ English translation completed and SRT structure validated."
+        status_msg += quality_status_suffix([item["report"] for item in translator_state.get("quality_reports", [])])
         return preview_original, preview_translated, download_path, translator_state, status_msg
     except gr.Error as e:
         if not chapter_revision_is_current(expected_chapter_revision, request):
@@ -3060,6 +3078,7 @@ def api_transcribe(file_path):
         "status": status_msg,
         "recognition_evidence": state.get("recognition_evidence"),
         "recognition_evidence_file_path": state.get("recognition_evidence_file_path"),
+        "quality_report": state.get("quality_report"),
     }
 
 
@@ -3077,6 +3096,7 @@ def api_srt_correct(srt_content, api_key, model_name, custom_model, base_url, re
         "original_srt": original,
         "corrected_srt": corrected,
         "correction_validation": correction_structure_report(original, corrected),
+        "quality_report": build_srt_quality_report(corrected),
         "subtitle_style": SUBTITLE_STYLE,
         "diff_html": diff_html,
         "original_file_path": orig_path,
@@ -3091,12 +3111,14 @@ def api_srt_correct(srt_content, api_key, model_name, custom_model, base_url, re
 
 def api_translate_srt_traditional(srt_files):
     """API wrapper: convert SRT file(s) to Traditional Chinese."""
-    preview_original, preview_translated, download_path, _ = translate_srt_to_traditional(srt_files)
+    preview_original, preview_translated, download_path, state = translate_srt_to_traditional(srt_files)
+    reports = state.get("quality_reports", [])
     return {
         "preview_original": preview_original,
         "preview_translated": preview_translated,
         "download_path": download_path,
-        "status": "✅ Translation to Traditional Chinese completed.",
+        "status": "✅ Translation to Traditional Chinese completed." + quality_status_suffix([item["report"] for item in reports]),
+        "quality_reports": reports,
     }
 
 
@@ -3117,6 +3139,7 @@ def api_translate_srt_traditional_text(srt_files):
         items.append({
             "file_name": os.path.basename(srt_path),
             "translated_srt": translated_srt,
+            "quality_report": build_srt_quality_report(translated_srt),
         })
 
     if not items:
@@ -3125,7 +3148,7 @@ def api_translate_srt_traditional_text(srt_files):
     result = {
         "count": len(items),
         "items": items,
-        "status": f"✅ Translation to Traditional Chinese completed for {len(items)} file(s).",
+        "status": f"✅ Translation to Traditional Chinese completed for {len(items)} file(s)." + quality_status_suffix([item["quality_report"] for item in items]),
     }
     if len(items) == 1:
         result["translated_srt"] = items[0]["translated_srt"]
@@ -3134,7 +3157,7 @@ def api_translate_srt_traditional_text(srt_files):
 
 def api_translate_srt_english(srt_files, api_key, model_name, custom_model, base_url):
     """API wrapper: translate SRT file(s) to English via LLM."""
-    preview_original, preview_translated, download_path, _ = translate_srt_to_english_fn(
+    preview_original, preview_translated, download_path, state = translate_srt_to_english_fn(
         srt_files=srt_files,
         api_key=api_key,
         model_name=model_name,
@@ -3145,7 +3168,8 @@ def api_translate_srt_english(srt_files, api_key, model_name, custom_model, base
         "preview_original": preview_original,
         "preview_translated": preview_translated,
         "download_path": download_path,
-        "status": "✅ English translation completed and SRT structure validated.",
+        "status": "✅ English translation completed and SRT structure validated." + quality_status_suffix([item["report"] for item in state.get("quality_reports", [])]),
+        "quality_reports": state.get("quality_reports", []),
     }
 
 

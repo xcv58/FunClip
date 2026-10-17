@@ -1,0 +1,359 @@
+{
+  "version": 1,
+  "scope": "FunClip first delivery: advisory quality reports and contextual Traditional conversion",
+  "source_policy": "Read-only source archive; final SRTs are references, not word-aligned acoustic truth",
+  "sources": {
+    "seafood.final.zh-Hans": {
+      "path": "台灣旅遊-澎湖吃海鮮/01_成品字幕/台灣旅遊-澎湖吃海鮮.zh-Hans.srt",
+      "role": "final-reference",
+      "language": "zh-Hans",
+      "sha256": "f4cf79d211dfbba50d0d051f631f345de34540a336658f098326025df096d5b5"
+    },
+    "seafood.final.zh-Hant": {
+      "path": "台灣旅遊-澎湖吃海鮮/01_成品字幕/台灣旅遊-澎湖吃海鮮.zh-Hant.srt",
+      "role": "final-reference",
+      "language": "zh-Hant",
+      "sha256": "549c3c9439057a259460ea3847d79bd506017677763b7e5ae7114f12feb7de6b"
+    },
+    "seafood.final.en": {
+      "path": "台灣旅遊-澎湖吃海鮮/01_成品字幕/台灣旅遊-澎湖吃海鮮.en.srt",
+      "role": "final-reference",
+      "language": "en",
+      "sha256": "53a0a4b9441f227f53d2d5e6ed3b48cb0f9111c76b3f6c92dfb9f573e1263d3d"
+    },
+    "fireworks.final.zh-Hans": {
+      "path": "台湾旅游-澎湖花火大会 2/01_成品字幕/台湾旅游-澎湖花火大会 2.zh-Hans.srt",
+      "role": "final-reference",
+      "language": "zh-Hans",
+      "sha256": "c7e22d2026012d97e141f54714bb8400ce5dbfc6508adc6fbf2af46e06f3103e"
+    },
+    "fireworks.final.zh-Hant": {
+      "path": "台湾旅游-澎湖花火大会 2/01_成品字幕/台湾旅游-澎湖花火大会 2.zh-Hant.srt",
+      "role": "final-reference",
+      "language": "zh-Hant",
+      "sha256": "359acfe2a8ca3bacf72859159039910e04c3128ccf61b4836e55003f498d821c"
+    },
+    "fireworks.final.en": {
+      "path": "台湾旅游-澎湖花火大会 2/01_成品字幕/台湾旅游-澎湖花火大会 2.en.srt",
+      "role": "final-reference",
+      "language": "en",
+      "sha256": "93aae8189a2970d10318f9a4076d2d83554eac8184e361e2a8f1985fa6aeb403"
+    },
+    "gardens.final.zh-Hans": {
+      "path": "游览新加坡花穹和云雾林/01_成品字幕/游览新加坡花穹和云雾林.zh-Hans.srt",
+      "role": "final-reference",
+      "language": "zh-Hans",
+      "sha256": "6c6adff8d1f8e13c995783868f09059e578846e8e0be7763f33b558bc5f721b1"
+    },
+    "gardens.final.zh-Hant": {
+      "path": "游览新加坡花穹和云雾林/01_成品字幕/游览新加坡花穹和云雾林.zh-Hant.srt",
+      "role": "final-reference",
+      "language": "zh-Hant",
+      "sha256": "0eea7d599503656f04b9bd1fb6a4e4570c77b1782b4347774b33c8ac669254b0"
+    },
+    "gardens.final.en": {
+      "path": "游览新加坡花穹和云雾林/01_成品字幕/游览新加坡花穹和云雾林.en.srt",
+      "role": "final-reference",
+      "language": "en",
+      "sha256": "3b3981cee81694d2ca818804059c76aad45bb19267e67a7abfc9b85aff8e822a"
+    },
+    "seafood.raw": {
+      "path": "台灣旅遊-澎湖吃海鮮/02_全部字幕版本/srt/review/service-original-asr.srt",
+      "role": "raw-asr",
+      "sha256": "a7478a492eb19ae6fa1f7171228e0816a92ff28dd8c540e30578645c17272017"
+    },
+    "fireworks.raw": {
+      "path": "台湾旅游-澎湖花火大会 2/02_全部字幕版本/srt/repair-20260827-v1/service-raw-asr.srt",
+      "role": "raw-asr",
+      "sha256": "dcb81abcbfbe872b03869efa4c2c8a14464427b099a3bdea90a10c42970f6aa0"
+    },
+    "gardens.raw": {
+      "path": "游览新加坡花穹和云雾林/02_全部字幕版本/srt/review/service-raw-9a3dc8c1/transcribe.raw.zh.srt",
+      "role": "raw-asr",
+      "sha256": "f39b93c3662276c678ed85f8325cb5e966951b3c7106cab3cc4c7ad5c28b19f6"
+    },
+    "seafood.generated.en": {
+      "path": "台灣旅遊-澎湖吃海鮮/02_全部字幕版本/srt/final/jenny-final-9ad270863004/service-translation-f3a46ba05d9b/generated.en.srt",
+      "role": "historical-generated-translation",
+      "sha256": "c198632bdc82377bb8363d990d86ee90381377f7c2747f8536d36fe935de5f2a"
+    },
+    "gardens.repair": {
+      "path": "游览新加坡花穹和云雾林/02_全部字幕版本/srt/review/repair-3a974b10cfd8/after.srt",
+      "role": "historical-repair",
+      "sha256": "e02943fd36b8abd8759edc26e17e5bc839ebba2f0ca2a1772e0967364356dbc5"
+    }
+  },
+  "cases": [
+    {
+      "id": "F01-long-125",
+      "kind": "quality",
+      "source_id": "fireworks.raw",
+      "source_cue_ids": [
+        125
+      ],
+      "input_srt": "125\n00:06:44,320 --> 00:10:05,130\n七龙珠之长湖夏日花火大一年级\n",
+      "expected_issue_counts": {
+        "long_cue": 1,
+        "sparse_long_cue": 1
+      },
+      "meaning": "Advisory risk only; do not split words evenly or infer absent speech"
+    },
+    {
+      "id": "F01-long-131",
+      "kind": "quality",
+      "source_id": "fireworks.raw",
+      "source_cue_ids": [
+        131
+      ],
+      "input_srt": "131\n00:11:35,600 --> 00:14:32,545\n我就在的错\n",
+      "expected_issue_counts": {
+        "long_cue": 1,
+        "sparse_long_cue": 1
+      },
+      "meaning": "Advisory risk only; do not split words evenly or infer absent speech"
+    },
+    {
+      "id": "F01-long-132",
+      "kind": "quality",
+      "source_id": "fireworks.raw",
+      "source_cue_ids": [
+        132
+      ],
+      "input_srt": "132\n00:14:38,600 --> 00:15:46,695\n我想高啊\n",
+      "expected_issue_counts": {
+        "long_cue": 1,
+        "sparse_long_cue": 1
+      },
+      "meaning": "Advisory risk only; do not split words evenly or infer absent speech"
+    },
+    {
+      "id": "S07-short-response",
+      "kind": "quality",
+      "source_id": "seafood.final.zh-Hans",
+      "source_cue_ids": [
+        166
+      ],
+      "input_srt": "166\n00:06:12,860 --> 00:06:13,220\n对\n",
+      "expected_issue_counts": {
+        "short_cue": 1
+      },
+      "meaning": "Genuine short response still merits display review"
+    },
+    {
+      "id": "G06-short-fragment",
+      "kind": "quality",
+      "source_id": "gardens.final.zh-Hans",
+      "source_cue_ids": [
+        394
+      ],
+      "input_srt": "394\n00:19:17,720 --> 00:19:18,080\n当然\n",
+      "expected_issue_counts": {
+        "short_cue": 1
+      },
+      "meaning": "Keep content intact while reporting a short display"
+    },
+    {
+      "id": "F01-performance-gap",
+      "kind": "quality",
+      "source_id": "fireworks.final.zh-Hans",
+      "source_cue_ids": [
+        148,
+        149
+      ],
+      "input_srt": "148\n00:06:47,867 --> 00:06:52,230\n无人机灯光表演正式登场\n\n149\n00:16:26,773 --> 00:16:29,925\n是不是给自己一个热情的掌声\n",
+      "expected_issue_counts": {},
+      "meaning": "A 574-second gap is not evidence of missing speech"
+    },
+    {
+      "id": "G02-english-name",
+      "kind": "quality",
+      "source_id": "gardens.final.zh-Hans",
+      "source_cue_ids": [
+        252
+      ],
+      "input_srt": "252\n00:13:06,500 --> 00:13:08,967\n现在我们踏上了Evolution Walk\n",
+      "expected_issue_counts": {},
+      "meaning": "Evolution Walk is not checked or replaced by timing diagnostics"
+    },
+    {
+      "id": "G03-comparison-reference",
+      "kind": "quality",
+      "source_id": "gardens.final.zh-Hans",
+      "source_cue_ids": [
+        354,
+        355,
+        356
+      ],
+      "input_srt": "354\n00:17:41,490 --> 00:17:44,410\n据估计，这些技术让冷却能耗\n\n355\n00:17:44,410 --> 00:17:48,230\n比采用传统的冷却技术的建筑\n\n356\n00:17:48,230 --> 00:17:50,416\n低约30%。\n",
+      "expected_issue_counts": {},
+      "meaning": "Timing diagnostics alone do not certify semantic preservation"
+    },
+    {
+      "id": "S06-price-reference",
+      "kind": "quality",
+      "source_id": "seafood.final.zh-Hans",
+      "source_cue_ids": [
+        300,
+        301
+      ],
+      "input_srt": "300\n00:13:14,490 --> 00:13:16,163\n谢谢谢谢\n\n301\n00:13:27,742 --> 00:13:30,770\n最后五道菜的价格是2910\n",
+      "expected_issue_counts": {},
+      "meaning": "Historical punctuation is allowed in references; do not rewrite it"
+    },
+    {
+      "id": "F03-english-resegmented",
+      "kind": "quality",
+      "source_id": "fireworks.final.en",
+      "source_cue_ids": [
+        112,
+        113,
+        114,
+        115
+      ],
+      "input_srt": "112\n00:06:35,392 --> 00:06:40,450\nFive, four, three, two, one!\n\n113\n00:06:41,000 --> 00:06:44,444\n2026 Penghu International Maritime\nFireworks Festival!\n\n114\n00:06:44,444 --> 00:06:47,640\nDragon Ball Z, Penghu Summer Fireworks\nFestival!\n\n115\n00:06:47,867 --> 00:06:52,230\nThe drone light show officially begins!\n",
+      "expected_issue_counts": {},
+      "meaning": "Human-resegmented English is assessed on its own timing"
+    },
+    {
+      "id": "G-numeric-digits",
+      "kind": "quality",
+      "source_id": "gardens.final.zh-Hans",
+      "source_cue_ids": [
+        253
+      ],
+      "input_srt": "253\n00:13:12,870 --> 00:13:16,072\n云雾林的室内瀑布高约35米\n",
+      "expected_issue_counts": {},
+      "meaning": "Do not score 35 vs 三十五 as a recognition error"
+    },
+    {
+      "id": "G-numeric-equivalent-control",
+      "kind": "quality",
+      "derived_from": "G-numeric-digits",
+      "input_srt": "253\n00:13:12,870 --> 00:13:16,072\n云雾林的室内瀑布高约三十五米\n",
+      "expected_issue_counts": {},
+      "meaning": "Synthetic equivalent wording control; original reference is unchanged"
+    },
+    {
+      "id": "repetition-control",
+      "kind": "quality",
+      "input_srt": "1\n00:00:00,000 --> 00:00:04,000\n在这个地方在这个地方在这个地方在这个地方在这个地方\n",
+      "expected_issue_counts": {
+        "repeated_text": 1
+      },
+      "meaning": "Synthetic control"
+    },
+    {
+      "id": "clean-control",
+      "kind": "quality",
+      "input_srt": "1\n00:00:00,000 --> 00:00:04,000\n今天我们参观花穹\n",
+      "expected_issue_counts": {},
+      "meaning": "Synthetic control"
+    },
+    {
+      "id": "G04-tulip-reference",
+      "kind": "traditional",
+      "source_id": "gardens.final.zh-Hans",
+      "source_cue_ids": [
+        197
+      ],
+      "input_srt": "197\n00:09:59,378 --> 00:10:01,135\n郁金香花海\n",
+      "expected_srt": "197\n00:09:59,378 --> 00:10:01,135\n鬱金香花海\n",
+      "expected_source_id": "gardens.final.zh-Hant",
+      "meaning": "Contextual traditional spelling follows the approved reference"
+    },
+    {
+      "id": "conversion-proper-name",
+      "kind": "traditional",
+      "input_srt": "1\n00:00:00,000 --> 00:00:02,000\n郁达夫的作品\n",
+      "expected_srt": "1\n00:00:00,000 --> 00:00:02,000\n郁達夫的作品\n",
+      "meaning": "Synthetic contextual conversion control"
+    },
+    {
+      "id": "conversion-fragrance",
+      "kind": "traditional",
+      "input_srt": "1\n00:00:00,000 --> 00:00:02,000\n味道浓郁\n",
+      "expected_srt": "1\n00:00:00,000 --> 00:00:02,000\n味道濃郁\n",
+      "meaning": "Synthetic contextual conversion control"
+    },
+    {
+      "id": "conversion-floral-fragrance",
+      "kind": "traditional",
+      "input_srt": "1\n00:00:00,000 --> 00:00:02,000\n馥郁的花香\n",
+      "expected_srt": "1\n00:00:00,000 --> 00:00:02,000\n馥郁的花香\n",
+      "meaning": "Synthetic contextual conversion control"
+    },
+    {
+      "id": "conversion-depression",
+      "kind": "traditional",
+      "input_srt": "1\n00:00:00,000 --> 00:00:02,000\n忧郁症与喫茶\n",
+      "expected_srt": "1\n00:00:00,000 --> 00:00:02,000\n憂鬱症與吃茶\n",
+      "meaning": "Synthetic contextual conversion control"
+    },
+    {
+      "id": "conversion-already-traditional",
+      "kind": "traditional",
+      "input_srt": "1\n00:00:00,000 --> 00:00:02,000\n鬱金香花海\n",
+      "expected_srt": "1\n00:00:00,000 --> 00:00:02,000\n鬱金香花海\n",
+      "meaning": "Synthetic contextual conversion control"
+    },
+    {
+      "id": "S06-semantic-anchor",
+      "kind": "deferred-semantic",
+      "reference_srt": "300\n00:13:14,490 --> 00:13:16,163\nThank you, thank you.\n\n301\n00:13:27,742 --> 00:13:30,770\nThe five dishes cost NT$2,910.\n",
+      "historical_candidate_srt": "300\n00:13:14,490 --> 00:13:16,163\nThe final five dishes cost 2910.\n\n301\n00:13:27,742 --> 00:13:30,770\nIt's our first seafood meal in Penghu.\n",
+      "expectation": "Future semantic check should detect price moved to the thank-you cue",
+      "score": false
+    },
+    {
+      "id": "G03-comparison-loss",
+      "kind": "deferred-semantic",
+      "reference_srt": "354\n00:17:41,490 --> 00:17:44,410\n据估计，这些技术让冷却能耗\n\n355\n00:17:44,410 --> 00:17:48,230\n比采用传统的冷却技术的建筑\n\n356\n00:17:48,230 --> 00:17:50,416\n低约30%。\n",
+      "historical_candidate_srt": "283\n00:17:41,490 --> 00:17:45,590\n据估计，这些技术让冷却能耗\n降低约30%。\n",
+      "expectation": "Future semantic check should detect a lost comparison target",
+      "score": false
+    },
+    {
+      "id": "S04-negation",
+      "kind": "unresolved",
+      "source_id": "seafood.final.zh-Hans",
+      "source_cue_ids": [
+        161,
+        162
+      ],
+      "input_srt": "161\n00:06:04,680 --> 00:06:06,926\n那不能进港，一定在海上\n\n162\n00:06:06,926 --> 00:06:08,429\n就是从 所以它的颜色\n",
+      "question": "Cannot independently establish the negation or filler from this audio",
+      "score": false
+    },
+    {
+      "id": "F04-service-dialogue",
+      "kind": "unresolved",
+      "source_id": "fireworks.final.zh-Hans",
+      "source_cue_ids": [
+        62,
+        63,
+        64
+      ],
+      "input_srt": "62\n00:03:25,718 --> 00:03:26,633\n您好\n\n63\n00:03:28,875 --> 00:03:30,616\n扇子 谢谢\n\n64\n00:03:31,672 --> 00:03:32,684\n谢谢\n",
+      "question": "Short dialogue not reliably independently transcribed",
+      "score": false
+    },
+    {
+      "id": "F05-closing-broadcast",
+      "kind": "unresolved",
+      "source_id": "fireworks.final.zh-Hans",
+      "source_cue_ids": [
+        149,
+        150,
+        151
+      ],
+      "input_srt": "149\n00:16:26,773 --> 00:16:29,925\n是不是给自己一个热情的掌声\n\n150\n00:16:30,150 --> 00:16:32,939\n谢谢现场所有的贵宾\n\n151\n00:16:32,939 --> 00:16:34,790\n以及我们的朋友们\n",
+      "question": "Broadcast was missed by independent ASR",
+      "score": false
+    }
+  ],
+  "deferred": [
+    "Semantic preservation guards",
+    "Translation fact-to-cue checks",
+    "Glossary and ASR changes"
+  ]
+}

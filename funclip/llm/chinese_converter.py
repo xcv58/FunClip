@@ -8,7 +8,13 @@ from funclip.subtitle_style import format_srt_content
 
 POST_CONVERSION_OVERRIDES = {
     "喫": "吃",
-    "鬱": "郁",
+}
+# OpenCC's single-character 郁→鬱 preference also affects these names and
+# fragrance words. Correct whole phrases, leaving 鬱金香 and 憂鬱 intact.
+TRADITIONAL_PHRASE_OVERRIDES = {
+    "鬱達夫": "郁達夫",
+    "馥鬱": "馥郁",
+    "濃鬱": "濃郁",
 }
 S2T_CONVERTER = OpenCC('s2t')
 
@@ -82,6 +88,8 @@ def convert_to_traditional(text: str) -> str:
 
     converted_text = convert_to_traditional_script(text)
     for source, target in POST_CONVERSION_OVERRIDES.items():
+        converted_text = converted_text.replace(source, target)
+    for source, target in TRADITIONAL_PHRASE_OVERRIDES.items():
         converted_text = converted_text.replace(source, target)
     return converted_text
 

@@ -544,7 +544,7 @@ class YoutubeChapterValidationTests(unittest.TestCase):
             [chapter["title"] for chapter in chapters],
             ["台灣美食文化", "吃飯健康指南", "郁達夫文學", "憂鬱症治療"],
         )
-        self.assertEqual(convert_to_traditional("憂鬱症與喫茶"), "憂郁症與吃茶")
+        self.assertEqual(convert_to_traditional("憂鬱症與喫茶"), "憂鬱症與吃茶")
         self.assertEqual(
             convert_to_traditional("吃飯、郁達夫、濃郁"),
             "吃飯、郁達夫、濃郁",
