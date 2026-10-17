@@ -25,7 +25,8 @@ from funclip.service_contract import normalized_recognition_payload
 from funclip.subtitle_style import SubtitleFormattingError
 from funclip.glossary import recognition_hotwords, glossary_report, resolve_glossary, validate_glossary_mode
 from funclip.numeric_spans import protect_numeric_sentences
-from funclip.review_queue import recognition_view, context_targets, build_review_queue
+from funclip.review_queue import recognition_view, context_targets, build_review_queue, include_readability_review
+from funclip.subtitle_quality import build_srt_quality_report
 
 
 _RECOGNITION_LOCK = threading.RLock()
@@ -132,6 +133,8 @@ class VideoClipper():
         except SubtitleFormattingError as exc:
             exc.recognition_state = state
             raise
+        state['quality_report'] = build_srt_quality_report(res_srt)
+        state['review_queue'] = include_readability_review(state['review_queue'], state['quality_report'], recognition)
         return res_text, res_srt, state
 
     def clip(self, dest_text, start_ost, end_ost, state, dest_spk=None, output_dir=None, timestamp_list=None):

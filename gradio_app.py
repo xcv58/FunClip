@@ -68,6 +68,7 @@ try:
     from funclip.subtitle_style import SUBTITLE_STYLE, SubtitleFormattingError
     from funclip.subtitle_quality import build_srt_quality_report, quality_status_suffix
     from funclip.subtitle_meaning import meaning_guard_scope
+    from funclip.meaning_alignment import srt_alignment_report, alignment_status_suffix, alignment_html
     from funclip.glossary import resolve_glossary, glossary_choices, glossary_report, validate_glossary_mode
     from funclip.review_queue import build_review_queue, write_review_bundle, save_review_bundle, decide_review_item, REVIEW_LABELS, review_details, review_time
     from funclip.review_queue import create_review_directory, touch_review_artifacts
@@ -2162,7 +2163,8 @@ def run_llm_correction_for_content(
     except Exception as e:
         raise gr.Error(format_llm_error(e, "AI auto correction"))
 
-    diff_html = generate_diff_html(original_srt, corrected_srt)
+    alignment = srt_alignment_report(original_srt, corrected_srt, mode='correction')
+    diff_html = generate_diff_html(original_srt, corrected_srt) + alignment_html(alignment)
     traditional_srt = convert_srt_to_traditional(corrected_srt)
 
     safe_base = sanitize_base_name(base_name if base_name else "subtitles")
@@ -2180,6 +2182,7 @@ def run_llm_correction_for_content(
 
     elapsed_time = time.time() - start_time
     status_msg = f"✅ Correction completed in {elapsed_time:.2f}s"
+    status_msg += alignment_status_suffix([alignment])
     status_msg += quality_status_suffix([build_srt_quality_report(corrected_srt)])
     status_msg += glossary_status_suffix(glossary_srt_report(original_srt, glossary_id))
     return original_srt, corrected_srt, traditional_srt, diff_html, orig_path, corr_path, trad_path, status_msg
@@ -2312,6 +2315,9 @@ def translate_srt_to_english_fn(srt_files, api_key, model_name, custom_model, ba
     last_translated = ""
     quality_reports = []
     glossary_reports = []
+    alignment_reports = []
+    alignment_paths = []
+    seen_names = {}
 
     for srt_file in srt_paths:
         with open(srt_file, 'r', encoding='utf-8') as f:
@@ -2334,12 +2340,21 @@ def translate_srt_to_english_fn(srt_files, api_key, model_name, custom_model, ba
 
         original_name = os.path.basename(srt_file)
         base_name = os.path.splitext(original_name)[0]
-        eng_filename = f"{base_name}_english.srt"
+        name_count = seen_names.get(base_name, 0)
+        seen_names[base_name] = name_count + 1
+        safe_name = base_name if name_count == 0 else f"{base_name}_{name_count + 1}"
+        eng_filename = f"{safe_name}_english.srt"
         eng_path = os.path.join(temp_dir, eng_filename)
         with open(eng_path, 'w', encoding='utf-8') as f:
             f.write(english_srt)
 
         output_paths.append(eng_path)
+        alignment = srt_alignment_report(srt_content, english_srt, mode='translation')
+        alignment_reports.append({'file_name': original_name, 'report': alignment})
+        alignment_path = os.path.join(temp_dir, safe_name + '_alignment.json')
+        with open(alignment_path, 'w', encoding='utf-8') as f:
+            json.dump(alignment, f, ensure_ascii=False, indent=2, allow_nan=False)
+        alignment_paths.append(alignment_path)
         quality_reports.append({"file_name": original_name, "report": build_srt_quality_report(english_srt)})
         if options:
             glossary_reports.append({"file_name": original_name, "report": glossary_srt_report(english_srt, glossary_id, english=True)})
@@ -2362,6 +2377,8 @@ def translate_srt_to_english_fn(srt_files, api_key, model_name, custom_model, ba
         "latest_output_paths": output_paths,
         "latest_output_kind": "english",
         "quality_reports": quality_reports,
+        "meaning_alignment_reports": alignment_reports,
+        "alignment_report_paths": alignment_paths,
     }
     if options:
         translator_state["glossary_reports"] = glossary_reports
@@ -2438,6 +2455,7 @@ def run_llm_correction_for_files(
     seen_names = {}
     quality_reports = []
     terminology_reports = []
+    alignment_reports = []
 
     for srt_path in srt_paths:
         with open(srt_path, 'r', encoding='utf-8') as f:
@@ -2474,6 +2492,7 @@ def run_llm_correction_for_files(
         original_paths.append(original_output_path)
         corrected_paths.append(corrected_output_path)
         quality_reports.append(build_srt_quality_report(corrected_srt))
+        alignment_reports.append(srt_alignment_report(srt_content, corrected_srt, mode='correction'))
         if options:
             terminology_reports.append(glossary_srt_report(srt_content, glossary_id))
         last_original = srt_content
@@ -2482,12 +2501,13 @@ def run_llm_correction_for_files(
     if not corrected_paths:
         raise gr.Error("All provided SRT files are empty.")
 
-    diff_html = generate_diff_html(last_original, last_corrected)
+    diff_html = generate_diff_html(last_original, last_corrected) + alignment_html(alignment_reports[-1])
     original_download = build_download_path(original_paths, "original_srts_for_correction.zip")
     corrected_download = build_download_path(corrected_paths, "ai_corrected_srts.zip")
     elapsed = time.time() - start_time
     status_msg = f"✅ AI correction completed for {len(corrected_paths)} file(s) in {elapsed:.2f}s"
     status_msg += quality_status_suffix(quality_reports)
+    status_msg += alignment_status_suffix(alignment_reports)
     if terminology_reports:
         status_msg += glossary_status_suffix({
             "profile": terminology_reports[0]["profile"],
@@ -2566,6 +2586,7 @@ def safe_translate_english_wrapper(
         if not chapter_revision_is_current(expected_chapter_revision, request):
             return _unchanged_outputs(5)
         status_msg = "✅ English translation completed and SRT structure validated."
+        status_msg += alignment_status_suffix([item['report'] for item in translator_state.get('meaning_alignment_reports', [])])
         status_msg += quality_status_suffix([item["report"] for item in translator_state.get("quality_reports", [])])
         for item in translator_state.get("glossary_reports", []):
             status_msg += glossary_status_suffix(item["report"])
@@ -3256,6 +3277,7 @@ def api_srt_correct(srt_content, api_key, model_name, custom_model, base_url, re
         "corrected_srt": corrected,
         "correction_validation": correction_structure_report(original, corrected),
         "meaning_preservation": meaning_guard_scope("correction"),
+        "meaning_alignment": srt_alignment_report(original, corrected, mode='correction'),
         "quality_report": build_srt_quality_report(corrected),
         "subtitle_style": SUBTITLE_STYLE,
         "diff_html": diff_html,
@@ -3331,9 +3353,10 @@ def api_translate_srt_english(srt_files, api_key, model_name, custom_model, base
         "preview_original": preview_original,
         "preview_translated": preview_translated,
         "download_path": download_path,
-        "status": "✅ English translation completed and SRT structure validated." + quality_status_suffix([item["report"] for item in state.get("quality_reports", [])]),
+        "status": "✅ English translation completed and SRT structure validated." + quality_status_suffix([item["report"] for item in state.get("quality_reports", [])]) + alignment_status_suffix([item['report'] for item in state.get('meaning_alignment_reports', [])]),
         "quality_reports": state.get("quality_reports", []),
         "meaning_preservation": meaning_guard_scope("translation"),
+        "meaning_alignment_reports": state.get('meaning_alignment_reports', []),
     }
 
     if glossary_options(glossary_id):
@@ -4309,6 +4332,9 @@ with gr.Blocks(
                         interactive=False,
                         elem_classes=["download-file"]
                     )
+                    alignment_download = gr.File(label='Meaning alignment review data', file_count='multiple', interactive=False)
+                    translator_state.change(fn=lambda state: (state or {}).get('alignment_report_paths') or None,
+                        inputs=[translator_state], outputs=[alignment_download], api_visibility='private')
 
                 # Right Column: Preview
                 with gr.Column(scale=1):

@@ -12,6 +12,7 @@ from funclip.llm.model_config import DEFAULT_LLM_MODEL, completion_options
 from funclip.subtitle_style import SUBTITLE_STYLE, SubtitleFormattingError, format_subtitle_text
 from funclip.subtitle_meaning import check_meaning_preservation, meaning_guard_scope, MeaningPreservationError
 from funclip.glossary import resolve_glossary, glossary_context, glossary_report, validate_glossary_correction, GlossaryError
+from funclip.meaning_alignment import validate_meaning_alignment, MeaningAlignmentError, alignment_prompt_context, srt_alignment_report
 
 load_dotenv()
 
@@ -191,7 +192,9 @@ def _validated_response(response, batch, glossary=None):
         )
         validate_glossary_correction([(c.cue_id, c.text) for c in batch],
                                      [(c.cue_id, t) for c, t in zip(batch, texts)], glossary)
-    except (MeaningPreservationError, GlossaryError) as exc:
+        validate_meaning_alignment([(c.cue_id, c.text) for c in batch],
+                                  [(c.cue_id, t) for c, t in zip(batch, texts)], mode='correction')
+    except (MeaningPreservationError, GlossaryError, MeaningAlignmentError) as exc:
         raise SRTCorrectionError(str(exc)) from exc
     # Validate the entire model batch before applying the local display policy.
     formatted = []
@@ -255,6 +258,7 @@ def request_srt_correction(srt_content, api_key=None, base_url=None, model=DEFAU
         payload = {"context_before": [_cue_text(c) for c in cues[max(0, start - 2):start]],
                    "cues": [_cue_text(c) for c in batch],
                    "context_after": [_cue_text(c) for c in cues[end:end + 2]]}
+        payload['alignment_reference'] = alignment_prompt_context([(c.cue_id, c.text) for c in batch])
         if glossary is not None:
             payload["glossary"] = glossary_context([(c.cue_id, c.text) for c in batch], glossary)
         prompt = build_correction_prompt()
@@ -316,6 +320,9 @@ def request_srt_correction(srt_content, api_key=None, base_url=None, model=DEFAU
     validation = correction_structure_report(srt_content, corrected)
     validation["subtitle_style"] = SUBTITLE_STYLE
     validation["meaning_preservation"] = meaning_guard_scope("correction")
+    validation['meaning_alignment'] = srt_alignment_report(srt_content, corrected, mode='correction')
+    if validation['meaning_alignment']['status'] == 'blocked':
+        raise SRTCorrectionError(str(MeaningAlignmentError(validation['meaning_alignment'])))
     if glossary is not None:
         validation["glossary_report"] = glossary_report([(c.cue_id, c.text) for c in cues], glossary)
     return {"corrected_content": corrected, "requested_model": model,

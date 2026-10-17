@@ -27,6 +27,10 @@ do not prove a word was spoken.
 
 Candidates cover money/percentages/negations, uncertain short speech turns,
 known name confusions, unresolved numeric boundaries and hinted/unbiased changes.
+They also include Chinese reading-speed and line-width warnings and unapplied
+phrase-grouping proposals. Displayed cue IDs are kept separate from native ASR
+sentence IDs. Proposals require audio and speaker confirmation; no cues are
+automatically merged or retimed. See [meaning alignment and readability](MEANING_ALIGNMENT_AND_READABILITY.md).
 Ordinary repeated acknowledgments such as 对 or 谢谢 are not removed or treated
 as unclear speech solely by this queue.
 

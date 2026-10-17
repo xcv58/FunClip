@@ -27,6 +27,7 @@ try:
     from funclip.glossary import glossary_choices, resolve_glossary
     from funclip.review_queue import write_review_bundle, decide_review_item, save_review_bundle, REVIEW_LABELS, review_details, review_time
     from funclip.review_queue import create_review_directory, touch_review_artifacts
+    from funclip.meaning_alignment import srt_alignment_report
 except ImportError as e:
     st.error(f"Error importing modules: {e}")
     st.stop()
@@ -66,7 +67,8 @@ def reset_state():
     """Clears results if a new file is uploaded."""
     keys_to_clear = ['res_text', 'res_srt', 'recognition_srt', 'correction_source_srt',
                      'numeric_span_report', 'review_queue', 'review_queue_path', 'review_bundle_path',
-                     'recognition_glossary_id', 'srt_filename', 'processing_done', 'res_srt_corrected']
+                     'recognition_glossary_id', 'srt_filename', 'processing_done', 'res_srt_corrected',
+                     'correction_alignment_report', 'quality_report']
     for key in keys_to_clear:
         if key in st.session_state:
             del st.session_state[key]
@@ -179,6 +181,7 @@ if uploaded_file is not None:
                     'correction_source_srt', state.get('recognition_srt', res_srt)
                 )
                 st.session_state['numeric_span_report'] = state.get('numeric_span_report')
+                st.session_state['quality_report'] = state.get('quality_report')
                 st.session_state['recognition_glossary_id'] = glossary_id
                 if state.get('review_queue') is not None:
                     audio = state.get('audio_input')
@@ -252,6 +255,9 @@ if uploaded_file is not None:
                                    file_name='review.json', mime='application/json')
                 st.download_button('Download review report with audio', Path(st.session_state['review_bundle_path']).read_bytes(),
                                    file_name='review.zip', mime='application/zip')
+        if st.session_state.get('quality_report'):
+            with st.expander('Chinese readability diagnostics'):
+                st.json(st.session_state['quality_report'].get('readability', {}))
 
         # --- 7. AI AUTO CORRECTION ---
         st.divider()
@@ -314,6 +320,8 @@ if uploaded_file is not None:
                         glossary=resolve_glossary(st.session_state.get('recognition_glossary_id')),
                     )
                     st.session_state['res_srt_corrected'] = corrected_text
+                    st.session_state['correction_alignment_report'] = srt_alignment_report(
+                        target_srt, corrected_text, mode='correction')
                     st.success("✅ Correction Complete!")
                 except Exception as e:
                     st.error(f"❌ Correction failed: {str(e)}")
@@ -322,6 +330,8 @@ if uploaded_file is not None:
         if 'res_srt_corrected' in st.session_state:
             st.divider()
             st.subheader("📝 Correction Results")
+            with st.expander('Meaning alignment review'):
+                st.json(st.session_state.get('correction_alignment_report', {}))
             
             # 1. Download Buttons (Side by Side)
             d_col1, d_col2 = st.columns(2)

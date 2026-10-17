@@ -40,7 +40,8 @@ class SubtitleQualityTests(unittest.TestCase):
         json.dumps(report, allow_nan=False)
 
     def test_repetition_warns_but_ordinary_long_gap_does_not(self):
-        self.assertEqual(build_srt_quality_report(srt("在这个地方" * 5))["issue_counts"], {"repeated_text": 1})
+        self.assertEqual(build_srt_quality_report(srt("在这个地方" * 5))["issue_counts"],
+                         {"repeated_text": 1, "chinese_line_length": 1})
         captions = "\n".join(srt("谢谢", f"00:00:0{i},000", f"00:00:0{i+1},000", i+1) for i in range(3))
         self.assertEqual(build_srt_quality_report(captions)["issue_counts"], {"repeated_adjacent_cues": 1})
         gap = srt("谢谢") + "\n" + srt("谢谢", "00:09:00,000", "00:09:04,000", 2)

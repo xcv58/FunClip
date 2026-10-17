@@ -5,9 +5,10 @@ import hashlib
 import math
 from numbers import Real
 import re
+from funclip.subtitle_readability import chinese_readability_report, DEFAULT_CHINESE_CPS, DEFAULT_CHINESE_LINE_UNITS
 
 
-QUALITY_REPORT_VERSION = 1
+QUALITY_REPORT_VERSION = 2
 MAX_CUE_DURATION_MS = 8_000
 SHORT_CUE_DURATION_MS = 700
 SPARSE_CUE_MIN_DURATION_MS = 15_000
@@ -33,7 +34,8 @@ def _content(text):
     return "".join(c.casefold() for c in text if c.isalnum())
 
 
-def build_srt_quality_report(srt_content, *, media_duration_seconds=None):
+def build_srt_quality_report(srt_content, *, media_duration_seconds=None,
+                             chinese_max_cps=DEFAULT_CHINESE_CPS, chinese_max_line_units=DEFAULT_CHINESE_LINE_UNITS):
     """Report timing/repetition risks; an empty issue list is not content approval.
 
     Unlike export validators, this parser retains diagnostics for malformed cues
@@ -75,6 +77,7 @@ def build_srt_quality_report(srt_content, *, media_duration_seconds=None):
             item["block"] = block
         report["issues"].append(item)
 
+    readable_cues = []
     if len(srt_content) > MAX_REPORT_CHARACTERS:
         flag("analysis_limit", "Subtitle exceeds the quality report size limit.", severity="error")
     else:
@@ -113,6 +116,8 @@ def build_srt_quality_report(srt_content, *, media_duration_seconds=None):
             if any(not line.strip() for line in lines[2:]):
                 flag("empty_body", "Cue has an empty text line.", severity="error", **context)
             duration = end - start
+            if duration > 0:
+                readable_cues.append({'cue_id': cue_id, 'start_ms': start, 'end_ms': end, 'text': text})
             if duration <= 0:
                 flag("nonpositive_duration", "Cue must end after it starts.", severity="error", **context)
             else:
@@ -148,6 +153,10 @@ def build_srt_quality_report(srt_content, *, media_duration_seconds=None):
             else:
                 flush_repeated()
         flush_repeated()
+    report['readability'] = chinese_readability_report(readable_cues, max_cps=chinese_max_cps,
+        max_line_units=chinese_max_line_units)
+    report['issues'].extend(report['readability']['issues'])
+    report['thresholds'].update(report['readability']['thresholds'])
     report["issue_counts"] = dict(Counter(i["code"] for i in report["issues"]))
     if report["issues"]:
         report["status"] = "needs_review"

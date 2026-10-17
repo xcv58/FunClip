@@ -284,3 +284,19 @@ is retained under `recognition_evidence.review_evidence`.
 
 See [review policy and validation](SUBTITLE_REVIEW_QUEUE.md) for glossary alias
 semantics, UI behavior, artifact retention and reproducible local checks.
+
+## Meaning alignment and Chinese readability
+
+Correction responses add `meaning_alignment`; English translation responses add
+`meaning_alignment_reports`. Coverage rows retain original source cue IDs, media
+times and source/output text hashes. They are structural provenance, not semantic
+certification. Unique supported content moves and explicit buying/selling reversals
+fail local validation; possible omissions and paraphrases request review. Existing
+numeric and glossary validation remain active, including a final cross-batch check.
+
+`quality_report` version 2 adds Chinese reading-speed, line-width and line-count
+diagnostics, configurable at the diagnostic-function boundary. Audio review queues
+include those findings and unapplied grouping proposals. No automatic retiming or
+text replacement occurs. API input signatures and the configured models stay the same.
+
+See [policy, limits and evaluation](MEANING_ALIGNMENT_AND_READABILITY.md).

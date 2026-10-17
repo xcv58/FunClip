@@ -43,6 +43,10 @@ REVIEW_LABELS = {
     'asr_hint_off_target_change': 'Other words changed with recognition hints',
     'context_check_unavailable': 'Alternate audio check unavailable',
     'context_fact_disagreement': 'Facts differ with another audio window',
+    'chinese_reading_speed': 'Check Chinese reading speed',
+    'chinese_line_length': 'Check Chinese line length',
+    'chinese_line_count': 'Check Chinese text lines',
+    'readability_grouping_candidate': 'Review a possible phrase grouping',
 }
 
 
@@ -99,6 +103,7 @@ def review_details(item):
     labels = {'original_text': 'Original recognition', 'before': 'Comparison recognition',
               'after': 'Alternative recognition', 'baseline_context': 'Without hints',
               'hinted_context': 'With hints', 'candidate': 'Reference spelling'}
+    labels.update(display_text='Displayed subtitle', proposed_text='Unapplied grouping proposal')
     if item['code'] in {'glossary_name_changed', 'asr_hint_off_target_change'}:
         labels.update(before='Without hints', after='Selected recognition with hints')
     elif item['code'] == 'context_fact_disagreement':
@@ -306,6 +311,35 @@ def decide_review_item(queue, item_id, decision):
     result['status'] = ('needs_edit' if 'needs_edit' in decisions else
                         'needs_review' if 'unresolved' in decisions else
                         'partial_review' if result.get('omitted_items') else 'reviewed')
+    return result
+
+
+def include_readability_review(queue, quality_report, evidence):
+    """Add display-cue diagnostics without confusing them with ASR sentence IDs."""
+    result = copy.deepcopy(queue)
+    items = result['items']
+    readability = quality_report.get('readability', {})
+    for issue in readability.get('issues', []):
+        a, b = issue['start_ms'], issue['end_ms']
+        native_ids = [i for i, s in enumerate(evidence.get('sentence_info') or [], 1)
+                      if (interval := _interval(s))[0] is not None and interval[0] < b and interval[1] > a]
+        items.append({'id': f"{result['source_sha256'][:12]}-reading-{len(items)}",
+            'code': issue['code'], 'reason': issue['message'], 'priority': 'medium', 'start_ms': a, 'end_ms': b,
+            'sentence_ids': native_ids, 'display_cue_ids': issue['cue_ids'], 'decision': 'unresolved',
+            'content_verified': False, 'display_text': issue.get('display_text', ''), 'readability': issue})
+    for proposal in readability.get('grouping_proposals', []):
+        items.append({'id': f"{result['source_sha256'][:12]}-group-{len(items)}",
+            'code': 'readability_grouping_candidate', 'reason': proposal['reason'], 'priority': 'low',
+            'start_ms': proposal['start_ms'], 'end_ms': proposal['end_ms'], 'sentence_ids': [],
+            'display_cue_ids': proposal['source_cue_ids'], 'proposed_text': proposal['proposed_text'],
+            'proposal': proposal, 'decision': 'unresolved', 'content_verified': False})
+    items.sort(key=lambda x: (_PRIORITY[x['priority']], x['start_ms'] is None, x['start_ms'] or 0, x['code']))
+    result['total_detected'] = len(items) + queue.get('omitted_items', 0)
+    result['items'] = items[:MAX_REVIEW_ITEMS]
+    result['omitted_items'] = result['total_detected'] - len(result['items'])
+    result['issue_counts'] = dict(Counter(i['code'] for i in result['items']))
+    result['status'] = 'needs_review' if result['items'] else 'no_candidates'
+    result['readability'] = {'thresholds': readability.get('thresholds', {}), 'applied_changes': 0}
     return result
 
 

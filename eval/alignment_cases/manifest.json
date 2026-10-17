@@ -1,0 +1,319 @@
+{
+  "version": 1,
+  "all_cases_synthetic": true,
+  "scope": "Local behavior controls not a real-world accuracy benchmark",
+  "cases": [
+    {
+      "id": "place-moved",
+      "mode": "translation",
+      "category": "supported_error",
+      "source": [
+        [
+          1,
+          "我们今天在台湾"
+        ],
+        [
+          7,
+          "风景真美"
+        ]
+      ],
+      "candidate": [
+        [
+          1,
+          "The view is nice"
+        ],
+        [
+          7,
+          "We are in Taiwan today"
+        ]
+      ],
+      "expected_alignment_status": "blocked"
+    },
+    {
+      "id": "photo-action-moved",
+      "mode": "translation",
+      "category": "supported_error",
+      "source": [
+        [
+          1,
+          "我们正在拍照"
+        ],
+        [
+          7,
+          "今天很开心"
+        ]
+      ],
+      "candidate": [
+        [
+          1,
+          "We are happy today"
+        ],
+        [
+          7,
+          "We are taking photos"
+        ]
+      ],
+      "expected_alignment_status": "blocked"
+    },
+    {
+      "id": "literal-phrase-moved",
+      "mode": "correction",
+      "category": "supported_error",
+      "source": [
+        [
+          1,
+          "她今天要去看展览"
+        ],
+        [
+          7,
+          "天气真好"
+        ]
+      ],
+      "candidate": [
+        [
+          1,
+          "她今天"
+        ],
+        [
+          7,
+          "要去看展览天气真好"
+        ]
+      ],
+      "expected_alignment_status": "blocked"
+    },
+    {
+      "id": "buy-sell-reversed",
+      "mode": "translation",
+      "category": "supported_error",
+      "source": [
+        [
+          1,
+          "我买了这件衣服"
+        ]
+      ],
+      "candidate": [
+        [
+          1,
+          "I sold this outfit"
+        ]
+      ],
+      "expected_alignment_status": "blocked"
+    },
+    {
+      "id": "museum-omitted",
+      "mode": "translation",
+      "category": "supported_error",
+      "source": [
+        [
+          1,
+          "我们参观博物馆"
+        ]
+      ],
+      "candidate": [
+        [
+          1,
+          "We went sightseeing"
+        ]
+      ],
+      "expected_alignment_status": "needs_review"
+    },
+    {
+      "id": "person-changed",
+      "mode": "translation",
+      "category": "supported_error",
+      "source": [
+        [
+          1,
+          "妈妈来到这里"
+        ]
+      ],
+      "candidate": [
+        [
+          1,
+          "Father came here"
+        ]
+      ],
+      "expected_alignment_status": "needs_review"
+    },
+    {
+      "id": "airport-omitted",
+      "mode": "translation",
+      "category": "supported_error",
+      "source": [
+        [
+          1,
+          "我们到达机场"
+        ]
+      ],
+      "candidate": [
+        [
+          1,
+          "We arrived"
+        ]
+      ],
+      "expected_alignment_status": "needs_review"
+    },
+    {
+      "id": "unsupported-meaning",
+      "mode": "translation",
+      "category": "unassessed",
+      "source": [
+        [
+          1,
+          "七彩烟霞"
+        ]
+      ],
+      "candidate": [
+        [
+          1,
+          "Something entirely different"
+        ]
+      ],
+      "expected_alignment_status": "no_supported_discrepancy"
+    },
+    {
+      "id": "literal-place-preserved",
+      "mode": "translation",
+      "category": "valid",
+      "source": [
+        [
+          1,
+          "台湾的机场"
+        ]
+      ],
+      "candidate": [
+        [
+          1,
+          "An airport in Taiwan"
+        ]
+      ],
+      "expected_alignment_status": "no_supported_discrepancy"
+    },
+    {
+      "id": "taxi-synonym",
+      "mode": "translation",
+      "category": "valid",
+      "source": [
+        [
+          1,
+          "我们搭计程车"
+        ]
+      ],
+      "candidate": [
+        [
+          1,
+          "We take a cab"
+        ]
+      ],
+      "expected_alignment_status": "no_supported_discrepancy"
+    },
+    {
+      "id": "traditional-place",
+      "mode": "translation",
+      "category": "valid",
+      "source": [
+        [
+          1,
+          "我們在臺北"
+        ]
+      ],
+      "candidate": [
+        [
+          1,
+          "We are in Taipei"
+        ]
+      ],
+      "expected_alignment_status": "no_supported_discrepancy"
+    },
+    {
+      "id": "small-typo",
+      "mode": "correction",
+      "category": "valid",
+      "source": [
+        [
+          1,
+          "今天的天汽很好"
+        ]
+      ],
+      "candidate": [
+        [
+          1,
+          "今天的天气很好"
+        ]
+      ],
+      "expected_alignment_status": "no_supported_discrepancy"
+    },
+    {
+      "id": "valid-pronoun",
+      "mode": "translation",
+      "category": "valid",
+      "source": [
+        [
+          1,
+          "我们到了台湾"
+        ]
+      ],
+      "candidate": [
+        [
+          1,
+          "We are here now"
+        ]
+      ],
+      "expected_alignment_status": "needs_review"
+    },
+    {
+      "id": "valid-photo-paraphrase",
+      "mode": "translation",
+      "category": "valid",
+      "source": [
+        [
+          1,
+          "我拍照留念"
+        ]
+      ],
+      "candidate": [
+        [
+          1,
+          "I snapped a picture as a keepsake"
+        ]
+      ],
+      "expected_alignment_status": "needs_review"
+    },
+    {
+      "id": "wrong-percent-existing",
+      "mode": "translation",
+      "category": "existing_guard_error",
+      "source": [
+        [
+          1,
+          "百分之八十三"
+        ]
+      ],
+      "candidate": [
+        [
+          1,
+          "80 percent"
+        ]
+      ],
+      "expected_alignment_status": "no_supported_discrepancy"
+    },
+    {
+      "id": "equivalent-fraction-existing",
+      "mode": "translation",
+      "category": "valid",
+      "source": [
+        [
+          1,
+          "三分之一"
+        ]
+      ],
+      "candidate": [
+        [
+          1,
+          "a third"
+        ]
+      ],
+      "expected_alignment_status": "no_supported_discrepancy"
+    }
+  ]
+}
