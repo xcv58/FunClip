@@ -10,6 +10,7 @@ import copy
 import librosa
 import logging
 import argparse
+import threading
 import numpy as np
 import soundfile as sf
 from moviepy.editor import *
@@ -22,6 +23,12 @@ from utils.argparse_tools import ArgumentParser, get_commandline_args
 from utils.trans_utils import pre_proc, proc, write_state, load_state, proc_spk, convert_pcm_to_float
 from funclip.service_contract import normalized_recognition_payload
 from funclip.subtitle_style import SubtitleFormattingError
+from funclip.glossary import recognition_hotwords, glossary_report, resolve_glossary, validate_glossary_mode
+from funclip.numeric_spans import protect_numeric_sentences
+from funclip.review_queue import recognition_view, context_targets, build_review_queue
+
+
+_RECOGNITION_LOCK = threading.RLock()
 
 
 class VideoClipper():
@@ -30,9 +37,14 @@ class VideoClipper():
         self.funasr_model = funasr_model
         self.GLOBAL_COUNT = 0
 
-    def recog(self, audio_input, sd_switch='no', state=None, hotwords="", output_dir=None):
+    def recog(self, audio_input, sd_switch='no', state=None, hotwords="", output_dir=None, *, glossary=None,
+              glossary_mode="hints", compare_hints=False, review_context=False):
         if state is None:
             state = {}
+        validate_glossary_mode(glossary_mode)
+        if type(compare_hints) is not bool or type(review_context) is not bool:
+            raise ValueError('Recognition review switches must be booleans')
+        profile = resolve_glossary(glossary)
         sr, data = audio_input
 
         # Convert to float64 consistently (includes data type checking)
@@ -45,32 +57,45 @@ class VideoClipper():
             logging.warning("Input wav shape: {}, only first channel reserved.".format(data.shape))
             data = data[:,0]
         state['audio_input'] = (sr, data)
-        if sd_switch == 'Yes':
-            rec_result = self.funasr_model.generate(data, 
-                                                    return_spk_res=True,
-                                                    return_raw_text=True, 
-                                                    is_final=True,
-                                                    output_dir=output_dir, 
-                                                    hotword=hotwords, 
-                                                    pred_timestamp=self.lang=='en',
-                                                    en_post_proc=self.lang=='en',
-                                                    cache={},
-                                                    batch_size_s=300)
-            recognition = normalized_recognition_payload(rec_result)
-            state['sd_sentences'] = recognition['sentence_info']
-        else:
-            rec_result = self.funasr_model.generate(data, 
-                                                    return_spk_res=False, 
-                                                    sentence_timestamp=True, 
-                                                    return_raw_text=True, 
-                                                    is_final=True, 
-                                                    hotword=hotwords,
-                                                    output_dir=output_dir,
-                                                    pred_timestamp=self.lang=='en',
-                                                    en_post_proc=self.lang=='en',
-                                                    cache={},
-                                                    batch_size_s=300)
-            recognition = normalized_recognition_payload(rec_result)
+        state['recognition_sample_rate'] = 16000
+        # FunASR keeps decoder hotwords on the shared model. Serialize inference
+        # so two requests cannot exchange glossary context.
+        baseline, comparison_error, checks, skipped = None, None, [], []
+        with _RECOGNITION_LOCK, recognition_hotwords(self.funasr_model, profile, hotwords, mode=glossary_mode) as (hints, glossary_evidence):
+            def recognize(wave, hint, *, primary=False):
+                options = dict(return_spk_res=sd_switch == 'Yes', return_raw_text=True,
+                               is_final=True, hotword=hint, pred_timestamp=self.lang == 'en',
+                               en_post_proc=self.lang == 'en', cache={}, batch_size_s=300,
+                               output_dir=output_dir if primary else None)
+                if sd_switch != 'Yes':
+                    options['sentence_timestamp'] = True
+                return copy.deepcopy(normalized_recognition_payload(self.funasr_model.generate(wave, **options)))
+
+            recognition = recognize(data, hints, primary=True)
+            if sd_switch == 'Yes':
+                state['sd_sentences'] = recognition['sentence_info']
+            if compare_hints and profile and glossary_mode == 'hints':
+                try:
+                    baseline = recognize(data, '')
+                except Exception:
+                    comparison_error = True
+            if review_context:
+                targets, skipped = context_targets(recognition, len(data) * 1000 / 16000)
+                for target in targets:
+                    record = dict(target)
+                    try:
+                        a, b = round(target['start_ms'] * 16), round(target['end_ms'] * 16)
+                        record['evidence'] = recognition_view(recognize(data[a:b], hints))
+                    except Exception:
+                        record['error'] = 'recognition_failed'
+                    checks.append(record)
+        state.pop('glossary', None)
+        state.pop('glossary_report', None)
+        if glossary_evidence is not None:
+            state['glossary'] = glossary_evidence
+            state['glossary_report'] = glossary_report(
+                [(i, s.get('text', '')) for i, s in enumerate(recognition['sentence_info'], 1)], profile
+            )
         state['recog_res_raw'] = recognition.get('raw_text', '')
         state['timestamp'] = recognition.get('timestamp', [])
         state['sentences'] = recognition['sentence_info']
@@ -80,9 +105,29 @@ class VideoClipper():
             recognition['sentence_info'], split_long_chinese=self.lang == 'zh',
             format_output=False,
         )
+        render_sentences = recognition['sentence_info']
+        state.pop('numeric_span_report', None)
+        state.pop('correction_source_srt', None)
+        if self.lang == 'zh':
+            render_sentences, state['numeric_span_report'] = protect_numeric_sentences(
+                render_sentences, raw_text=recognition.get('raw_text', ''),
+                timestamps=recognition.get('timestamp', []),
+            )
+            # Keep native evidence above intact. Correction must use the same
+            # protected cue layout as display, with internal punctuation intact.
+            state['correction_source_srt'] = generate_srt(
+                render_sentences, split_long_chinese=True, format_output=False,
+            )
+        state['review_evidence'] = {'baseline': recognition_view(baseline) if baseline is not None else None,
+                                    'context_checks': checks, 'comparison_failed': bool(comparison_error)}
+        state['review_queue'] = build_review_queue(
+            recognition, glossary=profile, baseline=baseline, context_checks=checks,
+            numeric_report=state.get('numeric_span_report'), glossary_evidence=glossary_evidence,
+            comparison_error=comparison_error, context_skipped=skipped,
+        )
         try:
             res_srt = generate_srt(
-                recognition['sentence_info'], split_long_chinese=self.lang == 'zh'
+                render_sentences, split_long_chinese=self.lang == 'zh'
             )
         except SubtitleFormattingError as exc:
             exc.recognition_state = state
@@ -154,7 +199,8 @@ class VideoClipper():
             res_audio = data
         return (sr, res_audio), message, clip_srt
 
-    def video_recog(self, video_filename, sd_switch='no', hotwords="", output_dir=None):
+    def video_recog(self, video_filename, sd_switch='no', hotwords="", output_dir=None, *, glossary=None,
+                    glossary_mode="hints", compare_hints=False, review_context=False):
         video = mpy.VideoFileClip(video_filename)
         # Extract the base name, add '_clip.mp4', and 'wav'
         if output_dir is not None:
@@ -184,7 +230,8 @@ class VideoClipper():
             'video': video,
         }
         # res_text, res_srt = self.recog((16000, wav), state)
-        return self.recog((16000, wav), sd_switch, state, hotwords, output_dir)
+        return self.recog((16000, wav), sd_switch, state, hotwords, output_dir, glossary=glossary,
+                          glossary_mode=glossary_mode, compare_hints=compare_hints, review_context=review_context)
 
     def video_clip(self, 
                    dest_text, 

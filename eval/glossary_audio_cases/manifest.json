@@ -1,0 +1,269 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "seafood-148-161",
+      "audio": "audio/seafood-148-161.wav",
+      "sha256": "c95efaef9716adb08d36859d9391971a521922b4b382da9d79e5b6aa561fc99c",
+      "profile": "penghu-food",
+      "expected_terms": {
+        "冰卷": [
+          "冰卷"
+        ],
+        "海螺片": [
+          "海螺片"
+        ]
+      },
+      "negative_control": false,
+      "unsupported_reference_terms": []
+    },
+    {
+      "id": "seafood-163-190",
+      "audio": "audio/seafood-163-190.wav",
+      "sha256": "359c42f365235bc946000f659b0a63cad275eb92563b17fd44db4816f4d4b8c2",
+      "profile": "penghu-food",
+      "expected_terms": {
+        "狗炸虾": [
+          "狗炸虾",
+          "狗炸蝦"
+        ],
+        "美人腿": [
+          "美人腿"
+        ]
+      },
+      "negative_control": false,
+      "unsupported_reference_terms": [
+        "红蟳",
+        "红𫊻"
+      ]
+    },
+    {
+      "id": "seafood-348-375",
+      "audio": "audio/seafood-348-375.wav",
+      "sha256": "f46b79ef3bf7ad89d3e998d41bb24886de6be86c19bfd6af5cbaa5d98dc9a4d4",
+      "profile": "penghu-food",
+      "expected_terms": {
+        "冰卷": [
+          "冰卷"
+        ]
+      },
+      "negative_control": false,
+      "unsupported_reference_terms": []
+    },
+    {
+      "id": "seafood-452-478",
+      "audio": "audio/seafood-452-478.wav",
+      "sha256": "abee0f980ba8e85c57d8fa174eea8b8c2e4ff57addf1bb91c172bd2217918a5b",
+      "profile": "penghu-food",
+      "expected_terms": {
+        "美人腿": [
+          "美人腿"
+        ]
+      },
+      "negative_control": false,
+      "unsupported_reference_terms": []
+    },
+    {
+      "id": "seafood-602-613",
+      "audio": "audio/seafood-602-613.wav",
+      "sha256": "58081826f71b28df682f4953a7326b96e7cc231abbcd37b2bf68af6a4b1ad941",
+      "profile": "penghu-food",
+      "expected_terms": {},
+      "negative_control": true,
+      "unsupported_reference_terms": []
+    },
+    {
+      "id": "seafood-791-819",
+      "audio": "audio/seafood-791-819.wav",
+      "sha256": "b2cb60fe3f18fe46787e9ff41f670e0ca4b833975aeebcc3c70b454c879d3b85",
+      "profile": "penghu-food",
+      "expected_terms": {
+        "澎湖": [
+          "澎湖"
+        ]
+      },
+      "negative_control": false,
+      "unsupported_reference_terms": []
+    },
+    {
+      "id": "seafood-876-890",
+      "audio": "audio/seafood-876-890.wav",
+      "sha256": "fb3c7091edcead0d9bf0f5dcc80fc7172bced3eae038cc1f949477eade69564f",
+      "profile": "penghu-food",
+      "expected_terms": {},
+      "negative_control": true,
+      "unsupported_reference_terms": []
+    },
+    {
+      "id": "fireworks-203-214",
+      "audio": "audio/fireworks-203-214.wav",
+      "sha256": "47ae86bf06adea28aa4a8124241c9b513741c97869edaf4f13027aa569a6214a",
+      "profile": "penghu-food",
+      "expected_terms": {
+        "观音亭": [
+          "观音亭",
+          "觀音亭"
+        ]
+      },
+      "negative_control": false,
+      "unsupported_reference_terms": []
+    },
+    {
+      "id": "fireworks-392-414",
+      "audio": "audio/fireworks-392-414.wav",
+      "sha256": "3f817a7fb5de71f8e5a8d95539a9b400eaa5dee339fc498ecf1fc4c2cbb34824",
+      "profile": "penghu-food",
+      "expected_terms": {
+        "澎湖": [
+          "澎湖"
+        ]
+      },
+      "negative_control": false,
+      "unsupported_reference_terms": []
+    },
+    {
+      "id": "fireworks-422-437",
+      "audio": "audio/fireworks-422-437.wav",
+      "sha256": "723ac9010c9fcaee29c1cadfe4407ba608a76dfdaccfc7450b274f1a5f048c06",
+      "profile": "penghu-food",
+      "expected_terms": {},
+      "negative_control": true,
+      "unsupported_reference_terms": []
+    },
+    {
+      "id": "fireworks-607-624",
+      "audio": "audio/fireworks-607-624.wav",
+      "sha256": "2c9d780ce5267c1c30432c8c91193b10bb26561f33a9385ee9c4d03e8930baa8",
+      "profile": "penghu-food",
+      "expected_terms": {},
+      "negative_control": true,
+      "unsupported_reference_terms": []
+    },
+    {
+      "id": "fireworks-693-708",
+      "audio": "audio/fireworks-693-708.wav",
+      "sha256": "76fed9465d60f86a74de49370058fb2e94a252ef647e2a65b8be08b561695e76",
+      "profile": "penghu-food",
+      "expected_terms": {},
+      "negative_control": true,
+      "unsupported_reference_terms": []
+    },
+    {
+      "id": "fireworks-878-893",
+      "audio": "audio/fireworks-878-893.wav",
+      "sha256": "eb085f37abd00612f107e7524bb6ae07e5b4e0bddc65b9787af34ac50015398a",
+      "profile": "penghu-food",
+      "expected_terms": {},
+      "negative_control": true,
+      "unsupported_reference_terms": []
+    },
+    {
+      "id": "fireworks-982-1005",
+      "audio": "audio/fireworks-982-1005.wav",
+      "sha256": "e234f7369f4aa15dfc94773f21db0a1e11c1107c1c0b16f655af2b81b5587a1e",
+      "profile": "penghu-food",
+      "expected_terms": {},
+      "negative_control": true,
+      "unsupported_reference_terms": []
+    },
+    {
+      "id": "gardens-70-82",
+      "audio": "audio/gardens-70-82.wav",
+      "sha256": "a8c4596482c5178f83a6f6076de0b09ba0cee19c3f12a2704cd861b66895228e",
+      "profile": "singapore-gardens",
+      "expected_terms": {
+        "花穹": [
+          "花穹"
+        ],
+        "云雾林": [
+          "云雾林",
+          "雲霧林"
+        ]
+      },
+      "negative_control": false,
+      "unsupported_reference_terms": []
+    },
+    {
+      "id": "gardens-592-605",
+      "audio": "audio/gardens-592-605.wav",
+      "sha256": "8eddd3506031ebde7566f983c93ae165b79a03b645de7c01fee77360d41bca2e",
+      "profile": "singapore-gardens",
+      "expected_terms": {
+        "郁金香": [
+          "郁金香",
+          "鬱金香"
+        ]
+      },
+      "negative_control": false,
+      "unsupported_reference_terms": []
+    },
+    {
+      "id": "gardens-740-758",
+      "audio": "audio/gardens-740-758.wav",
+      "sha256": "1dcb064713de268d4d16732c8c323b751403e8a092a66a3cb30b9432bb567e12",
+      "profile": "singapore-gardens",
+      "expected_terms": {
+        "花穹": [
+          "花穹"
+        ],
+        "云雾林": [
+          "云雾林",
+          "雲霧林"
+        ]
+      },
+      "negative_control": false,
+      "unsupported_reference_terms": []
+    },
+    {
+      "id": "gardens-781-800",
+      "audio": "audio/gardens-781-800.wav",
+      "sha256": "2e32cb0cfbae86997849194b8bac08cfe381ff6c2d851701a3181c5c502b9ea1",
+      "profile": "singapore-gardens",
+      "expected_terms": {
+        "云雾林": [
+          "云雾林",
+          "雲霧林"
+        ],
+        "Evolution Walk": [
+          "Evolution Walk"
+        ]
+      },
+      "negative_control": false,
+      "unsupported_reference_terms": []
+    },
+    {
+      "id": "gardens-1060-1072",
+      "audio": "audio/gardens-1060-1072.wav",
+      "sha256": "f3c60686a23913dbd36e4fc09607a18a6aa0596fd88c1842f8833ca79ff430f1",
+      "profile": "singapore-gardens",
+      "expected_terms": {},
+      "negative_control": true,
+      "unsupported_reference_terms": []
+    },
+    {
+      "id": "gardens-1153-1162",
+      "audio": "audio/gardens-1153-1162.wav",
+      "sha256": "09d8362442595c427e01f8dcaeb4b3b008fcd564f782aa8fa892443c70c17038",
+      "profile": "singapore-gardens",
+      "expected_terms": {
+        "云雾林": [
+          "云雾林",
+          "雲霧林"
+        ],
+        "花穹": [
+          "花穹"
+        ]
+      },
+      "negative_control": false,
+      "unsupported_reference_terms": []
+    }
+  ],
+  "limits": [
+    "Selected short passages from the same three episodes; not an independent population sample",
+    "Expected name presence comes from untouched final references plus earlier local audio and visual evidence, not a new human verbatim transcript",
+    "Unclear negation and service dialogue are not scored for overall correctness",
+    "New terms in negative controls are review candidates, not proof of false speech",
+    "Missing-vocabulary crab characters are reported separately; no invented spellings or species are credited"
+  ],
+  "annotation_history": "Audited after the initial paired run: gardens-70-82 also contains 云雾林; gardens-1153-1162 contains 花穹 and 云雾林 and is not a negative control. Initial preselected 15-target scores are retained separately in the local raw run. This audited manifest has 18 term-clip targets and 8 negative controls."
+}

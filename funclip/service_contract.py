@@ -35,8 +35,29 @@ def recognition_evidence(text, srt_content, recognition_state):
         "rendered_srt_sha256": hashlib.sha256(srt_content.encode("utf-8")).hexdigest(),
         "subtitle_style": SUBTITLE_STYLE,
     }
+    if "glossary" in state:
+        evidence["glossary"] = json_value(state["glossary"])
+        evidence["glossary_report"] = json_value(state.get("glossary_report"))
+    if "correction_source_srt" in state:
+        source = state["correction_source_srt"]
+        evidence["correction_source_srt"] = source
+        evidence["correction_source_srt_sha256"] = hashlib.sha256(source.encode("utf-8")).hexdigest()
+        evidence["numeric_span_report"] = json_value(state.get("numeric_span_report"))
+    if "review_evidence" in state:
+        evidence["review_evidence"] = json_value(state['review_evidence'])
     # Round-trip creates an independent snapshot and verifies finite JSON values.
     return json.loads(json.dumps(evidence, ensure_ascii=False, allow_nan=False))
+
+
+def recognition_correction_source(srt_content, evidence):
+    """Use protected native timing only for the unchanged recognition output.
+
+    Uploaded or edited SRTs retain their own cue layout. Older evidence records
+    still provide their original punctuated correction source.
+    """
+    if evidence and srt_content == evidence.get("rendered_srt"):
+        return evidence.get("correction_source_srt", evidence.get("original_srt", srt_content))
+    return srt_content
 
 
 def normalized_recognition_payload(recognition_result):

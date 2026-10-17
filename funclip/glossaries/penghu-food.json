@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "id": "penghu-food",
+  "label": "澎湖 food and place names",
+  "entries": [
+    {
+      "id": "penghu",
+      "zh_hans": "澎湖",
+      "zh_hant": "澎湖",
+      "english": "Penghu",
+      "evidence": "Existing approved episode wording",
+      "asr_hotwords": [
+        "澎湖"
+      ]
+    },
+    {
+      "id": "chilled-squid",
+      "zh_hans": "冰卷",
+      "zh_hant": "冰卷",
+      "english": "chilled squid",
+      "evidence": "Menu frame seafood 150.5 seconds and approved English subtitle wording",
+      "asr_hotwords": [
+        "冰卷",
+        "澎湖冰卷"
+      ]
+    },
+    {
+      "id": "conch",
+      "zh_hans": "海螺片",
+      "zh_hant": "海螺片",
+      "english": "conch slices",
+      "english_variants": [
+        "slices of conch"
+      ],
+      "evidence": "Menu frame seafood 157.7 seconds and approved episode wording",
+      "asr_hotwords": [
+        "海螺片",
+        "凉拌海螺片"
+      ]
+    },
+    {
+      "id": "gouzha-shrimp",
+      "zh_hans": "狗炸虾",
+      "zh_hant": "狗炸蝦",
+      "menu_name": "狗蝦炸",
+      "spoken_forms": [
+        "狗虾炸"
+      ],
+      "english": "Gouzha shrimp",
+      "evidence": "Menu frame seafood 169 seconds differs from the spoken order; retain the source form",
+      "asr_hotwords": [
+        "狗炸虾"
+      ]
+    },
+    {
+      "id": "roe-crab",
+      "zh_hans": "红𫊻",
+      "zh_hant": "紅蟳",
+      "spoken_forms": [
+        "红蟳"
+      ],
+      "english": "roe crab",
+      "english_variants": [
+        "roe crabs"
+      ],
+      "evidence": "Menu frames seafood 171.1 and 175.9 seconds and approved English wording; does not establish a biological species",
+      "asr_hotwords": [
+        "红蟳",
+        "红𫊻"
+      ],
+      "asr_confusions": [
+        "红鲟",
+        "胡鲟洲"
+      ]
+    },
+    {
+      "id": "beauty-legs",
+      "zh_hans": "美人腿",
+      "zh_hant": "美人腿",
+      "english": "beauty legs",
+      "evidence": "Spoken nickname and approved English wording only; ingredient identity is not established",
+      "asr_hotwords": [
+        "美人腿"
+      ]
+    },
+    {
+      "id": "guanyinting",
+      "zh_hans": "观音亭",
+      "zh_hant": "觀音亭",
+      "english": "Guanyinting",
+      "english_variants": [
+        "Guanyinting Recreation Area"
+      ],
+      "evidence": "Approved episode place name",
+      "asr_hotwords": [
+        "观音亭"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "scope": "Offline audit replay and optional same-model local audio checks; no final SRT edits",
+  "profile_notes": "ASR hotwords unchanged from the frozen audit. Added review-only confusions for 普罗山贝 and Network and a distinct spoken alias 榴莲蜜. English labels are audit data, not newly registered production profiles.",
+  "profiles_sha256": "6aabb3a26f699227757015b5b9cc5e1516ea8f807df291a4b9830c3e90b094d4",
+  "cases": [
+    {
+      "id": "soup-30-50",
+      "episode": "soup",
+      "fixture": "soup-30-50.json",
+      "sha256": "aac81926919f14207d8a3e67b8dc4741bc202e8bc399899db3baff60488b6f89",
+      "expected_codes": [
+        "glossary_name_changed"
+      ],
+      "audio": "soup-30-50.wav"
+    },
+    {
+      "id": "soup-150-172",
+      "episode": "soup",
+      "fixture": "soup-150-172.json",
+      "sha256": "fc47aee01d57c5490ab636e4bfd42bdaea5807e8ed756c46d910f9943b00f31d",
+      "expected_codes": [
+        "asr_hint_off_target_change",
+        "glossary_name_changed"
+      ],
+      "audio": "soup-150-172.wav"
+    },
+    {
+      "id": "soup-213-237",
+      "episode": "soup",
+      "fixture": "soup-213-237.json",
+      "sha256": "7cd79aa782bcb349b09e3d7a59a7967d724bddded00bbb20031e6565589566dd",
+      "expected_codes": [
+        "short_turn_review"
+      ],
+      "audio": "soup-213-237.wav"
+    },
+    {
+      "id": "soup-427-449",
+      "episode": "soup",
+      "fixture": "soup-427-449.json",
+      "sha256": "13862091b9be404b5f9675378854542497caff890bf45c6b5618a2da2c69fb46",
+      "expected_codes": [
+        "short_turn_review"
+      ],
+      "audio": "soup-427-449.wav"
+    },
+    {
+      "id": "durian-72-94",
+      "episode": "durian",
+      "fixture": "durian-72-94.json",
+      "sha256": "b226757dc34d2cfdf0493b305d694bc856f66c36cd56f613e5bc516a94bd43fe",
+      "expected_codes": [
+        "possible_asr_confusion"
+      ],
+      "audio": "durian-72-94.wav"
+    },
+    {
+      "id": "durian-592-617",
+      "episode": "durian",
+      "fixture": "durian-592-617.json",
+      "sha256": "f1191005b314086ff330b0540e4039d973bc6cf7bb8bfd350b0ba69c196e6a2c",
+      "expected_codes": [
+        "unsupported_hotword"
+      ],
+      "audio": "durian-592-617.wav"
+    },
+    {
+      "id": "fire-797-824",
+      "episode": "fire",
+      "fixture": "fire-797-824.json",
+      "sha256": "a0d00ba8f96e37ac1e1cc028b52dd46748937ee3efb2ddf972e4eb1ffb840af6",
+      "expected_codes": [
+        "possible_asr_confusion",
+        "asr_hint_off_target_change"
+      ],
+      "audio": "fire-797-824.wav"
+    },
+    {
+      "id": "fire-319-344",
+      "episode": "fire",
+      "fixture": "fire-319-344.json",
+      "sha256": "24c56bcdb65f1b6b1f2894590e8c4b55c572a4af2c68421d3fbb294ca4cc09de",
+      "expected_codes": [
+        "context_fact_disagreement"
+      ],
+      "audio": "fire-319-344.wav"
+    }
+  ]
+}

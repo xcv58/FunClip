@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "id": "singapore-gardens",
+  "label": "Singapore gardens names",
+  "entries": [
+    {
+      "id": "flower-dome",
+      "zh_hans": "花穹",
+      "zh_hant": "花穹",
+      "english": "Flower Dome",
+      "evidence": "Approved episode attraction name",
+      "asr_hotwords": [
+        "花穹"
+      ]
+    },
+    {
+      "id": "cloud-forest",
+      "zh_hans": "云雾林",
+      "zh_hant": "雲霧林",
+      "english": "Cloud Forest",
+      "evidence": "Approved episode attraction name",
+      "asr_hotwords": [
+        "云雾林",
+        "云雾森林"
+      ]
+    },
+    {
+      "id": "tulips",
+      "zh_hans": "郁金香",
+      "zh_hant": "鬱金香",
+      "english": "tulips",
+      "english_variants": [
+        "tulip"
+      ],
+      "evidence": "Flower frame gardens 599.9 seconds and approved episode wording",
+      "asr_hotwords": [
+        "郁金香"
+      ]
+    },
+    {
+      "id": "evolution-walk",
+      "zh_hans": "Evolution Walk",
+      "zh_hant": "Evolution Walk",
+      "english": "Evolution Walk",
+      "evidence": "Sign frame gardens 787.5 seconds and approved episode wording",
+      "asr_hotwords": [
+        "Evolution Walk"
+      ],
+      "asr_confusions": [
+        "evolution work"
+      ]
+    }
+  ]
+}

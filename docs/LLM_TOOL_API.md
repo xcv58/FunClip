@@ -114,6 +114,19 @@ Deploy the prepared changes before expecting these additional fields from a host
   `original_srt` and its hash describe the segmented ASR SRT before display formatting,
   so cue and sentence counts may differ. Raw punctuation is retained. Unaligned sentences remain
   intact. See [Chinese subtitle segmentation](CHINESE_SUBTITLE_SEGMENTATION.md).
+- Numeric phrases stay intact during Chinese cue splitting. Narrow native
+  boundaries supported by matching raw tokens and timestamps can also be restored
+  before rendering. Chinese evidence adds `correction_source_srt`, its SHA-256 hash
+  and `numeric_span_report`; `/transcribe` also returns that report at the root.
+  Report locations use original ASR sentence IDs. Raw evidence and `original_srt`
+  remain available. Uncertain boundaries are flagged instead of merged.
+  UI and async correction use the protected punctuated source for unchanged
+  transcription output. Edited/uploaded SRTs retain their supplied cue layout.
+- Meaning guard version 2 normalizes supported equivalent expressions locally:
+  Chinese fractions and English article fractions, narrative 第二天 and next day,
+  calendar years, hyphenated duration units, and colloquial shared-scale ranges
+  such as 五六十万美元. This changes validation only, not the subtitle wording.
+  Numeric value, currency, endpoint and source-cue checks still apply.
 - Final subtitle bodies follow `punctuation-free-v1`, enforced locally with spaces
   as separators. Recognition evidence additionally includes `rendered_srt`,
   `rendered_srt_sha256` and `subtitle_style`; the rendered SRT is the public
@@ -182,3 +195,92 @@ Notes:
 - `/submit_transcribe_and_correct` copies an upload into a private staging file, then deletes both that stage and the exact Gradio-cached input before publishing either `completed` or `failed`. A cleanup error fails the job instead of reporting a clean terminal result.
 - The async cleanup accepts only regular, nonsymlink files contained by Gradio's configured upload root. It never deletes an arbitrary caller-supplied path.
 - Gradio additionally checks hourly for cache files older than one hour and clears its cache when the service shuts down. These are fallback bounds for abandoned/non-async uploads; the async endpoint performs terminal cleanup immediately.
+
+## Optional episode glossaries and ASR hotwords
+
+The glossary delivery is opt-in. Select **Episode glossary** in the UI or use
+one of the additive endpoints below. All nine existing endpoint input lists stay
+unchanged and continue using no glossary. Deploy/restart the service with this
+source before expecting the new endpoints.
+
+| Endpoint | Inputs |
+| --- | --- |
+| `/transcribe_with_glossary` | Existing `/transcribe` inputs, then `glossary_id` |
+| `/srt_correct_with_glossary` | Existing `/srt_correct` inputs, then `glossary_id` |
+| `/srt_translate_english_with_glossary` | Existing English translation inputs, then `glossary_id` |
+| `/submit_transcribe_and_correct_with_glossary` | Existing async transcription inputs, then `glossary_id` |
+| `/submit_srt_correct_with_glossary` | Existing async correction inputs, then `glossary_id` |
+
+`glossary_id` is `none`, `penghu-food`, or `singapore-gardens`. For example:
+
+```python
+result = client.predict(
+    handle_file("/absolute/path/input.wav"),
+    "penghu-food",
+    api_name="/transcribe_with_glossary",
+)
+print(result["recognition_evidence"]["glossary"])
+print(result["glossary_report"])
+```
+
+The immutable profiles in `funclip/glossaries/` record Simplified/Traditional
+forms, optional spoken aliases and a distinct menu name, English wording,
+provenance, ASR hotwords and suspected confusions. To add a future episode, add
+a schema-valid JSON profile there, add appropriate regression cases, and restart
+the service to refresh the UI catalog. API profile IDs never resolve arbitrary
+file paths or URLs. Evidence notes and suspected-confusion guesses are excluded
+from model prompts; only matching confirmed entries enter each LLM batch.
+
+The existing SeACo model receives validated hotwords through its native local
+text-file parser. Unsupported token spellings are excluded and recorded under
+`recognition_evidence.glossary.unsupported_hotwords`. Its current tokenizer
+cannot encode 蟳 or 𫊻; adding 红蟳 to a dictionary does not fix that limitation.
+ASR inference is serialized because the shared native decoder stores hotwords
+on the model object. Each request gets its own temporary hotword file, removed
+when inference exits. Async jobs carry the selected profile through both stages.
+
+`glossary_report` is advisory and has `content_verified: false`. In recognition
+evidence its IDs refer to the original ASR sentences, which may be segmented into
+multiple displayed cues. Correction reports refer to the supplied SRT cue IDs.
+English file translation returns per-file `glossary_reports`, including Chinese
+characters left in English output, covering supplementary rare characters.
+The UI status includes a review count and unsupported ASR spellings.
+
+Correction validation prevents confirmed terms from being lost, newly invented
+in another cue, or substituted with a different printed menu name. A suspected
+homophone such as 胡鲟洲 remains unchanged and gets an audio-review candidate;
+there is no global replacement. English translation stops before a paid call
+when such a source name needs review. Otherwise its same-cue name validation
+uses the confirmed English wording/variants and the existing bounded retry.
+Numbers, meaning checks, original cue headers/times, punctuation-free rendering
+and verbatim recognition evidence keep their existing policies.
+
+The local audio benchmark found useful name recoveries and a likely hotword
+insertion in a service-dialogue passage. Keep profiles opt-in and review names;
+this feature does not certify overall transcript accuracy. See the reproducible
+[audio benchmark](../eval/glossary_audio_cases/README.md).
+
+## Audio review queue and glossary controls
+
+The UI defaults to **Reference only** glossary use. **Recognition hints with
+comparison** also runs unbiased recognition and exposes name/off-target changes.
+Choose **None** for no glossary. Legacy glossary endpoints retain their original
+one-pass recognition behavior.
+
+New `/transcribe_with_review` accepts `file_path`, `glossary_id`, `glossary_mode`
+(`reference` or `hints`) and boolean `review_context`. The additive
+`/submit_transcribe_and_correct_with_review` takes the existing six async inputs,
+then those three controls. Mode/profile/context are snapshotted per job.
+
+Transcription adds `review_queue`, `review_queue_file_path` and
+`review_bundle_file_path`. New review endpoints also return `review_files` as
+cache-registered FileData so gradio_client can download the JSON and ZIP. The ZIP
+includes HTML and derived replay audio. Queue
+items use original ASR sentence IDs and media-relative milliseconds. Decisions
+record unresolved/keep-original/needs-edit metadata without changing subtitles.
+Optional same-model context checks are bounded to six windows and 120 seconds;
+no alternative is automatically selected. Separate raw baseline/context evidence
+is retained under `recognition_evidence.review_evidence`.
+
+See [review policy and validation](SUBTITLE_REVIEW_QUEUE.md) for glossary alias
+semantics, UI behavior, artifact retention and reproducible local checks.

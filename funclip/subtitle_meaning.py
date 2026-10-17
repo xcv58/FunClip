@@ -8,7 +8,7 @@ import re
 import unicodedata
 
 
-MEANING_GUARD_VERSION = 1
+MEANING_GUARD_VERSION = 2
 _DIGITS = dict(zip("零〇一二两三四五六七八九", (0, 0, 1, 2, 2, 3, 4, 5, 6, 7, 8, 9)))
 _SMALL = {"十": 10, "百": 100, "千": 1000}
 _LARGE = {"万": 10_000, "亿": 100_000_000}
@@ -130,6 +130,9 @@ def _english_decimal(text):
 
 def _unit(text, start, end):
     suffix = text[end:].lstrip()
+    # A duration modifier keeps its unit: 30-year, thirty-year, 6-month.
+    if re.match(r"[-‐‑–](?=[a-z])", suffix):
+        suffix = suffix[1:]
     match = _UNIT.match(suffix)
     unit = _UNITS[match.group()] if match else None
     finish = end + len(text[end:]) - len(suffix) + len(match.group()) if match else end
@@ -139,6 +142,35 @@ def _unit(text, start, end):
             unit = currency
             break
     return unit, finish
+
+
+def _shared_range_unit(text, end):
+    """An explicit trailing unit applies to both endpoints, not just the last."""
+    tail = re.match(r"\s*(?:to\b|or\b|到|至|或)\s*", text[end:])
+    if not tail:
+        return None
+    start = end + tail.end()
+    endpoint = _NUMBER.match(text, start) or _EN_NUMBER.match(text, start)
+    if endpoint is None:
+        return None
+    unit, _ = _unit(text, endpoint.start(), endpoint.end())
+    return unit
+
+
+def _calendar_unit(text, start, end, value, unit):
+    """Distinguish a dated year from a duration or a four-digit amount."""
+    if value != value.to_integral_value() or not 1000 <= value <= 2999 or unit not in {None, "year"}:
+        return unit
+    prefix, suffix = text[:start].rstrip(), text[end:].lstrip()
+    if suffix.startswith("年"):
+        if (re.search(r"(?:持续|历时|长达|已有|超过|花了|等了|用了|为期|第)$", prefix)
+                or re.match(r"年(?:的)?(?:历史|时间|之久|寿命|光阴|了)", suffix)):
+            return unit
+        return "calendar_year"
+    if unit is None and (re.search(r"\b(?:in|by|since|during|until|through|from|year)\s*$", prefix)
+                         or re.match(r"(?:tax rates|tax brackets|tax table|fiscal year)\b", suffix)):
+        return "calendar_year"
+    return unit
 
 
 @dataclass(frozen=True)
@@ -160,9 +192,9 @@ def _numbers(text):
     text = re.sub(r"几十(?=年|个|米|次)", "数十", text)
     # Adjacent spoken range endpoints share the following scale.
     def english_range(m):
-        scale = _EN_SCALE[m[3]]
+        scale = int(_english_decimal(m[3]))
         return f"{_EN_VALUES[m[1]] * scale} or {_EN_VALUES[m[2]] * scale}"
-    text = re.sub(r"\b(" + "|".join(_EN_VALUES) + r") (?:or|to) (" + "|".join(_EN_VALUES) + r") (hundred|thousand|million)\b", english_range, text)
+    text = re.sub(r"\b(" + "|".join(_EN_VALUES) + r") (?:or|to) (" + "|".join(_EN_VALUES) + r") (hundred(?: (?:thousand|million|billion))?|thousand|million|billion)\b", english_range, text)
     facts, occupied = [], []
 
     def add(start, end, value, unit=None, optional=False):
@@ -170,7 +202,8 @@ def _numbers(text):
         if re.search(r"(?:negative|minus)\s*$", prefix):
             value = -abs(value)
         detected, finish = _unit(text, start, end)
-        unit = unit or detected
+        unit = unit or detected or _shared_range_unit(text, end)
+        unit = _calendar_unit(text, start, end, value, unit)
         facts.append(NumericFact(value, unit, optional and unit in {None, "count"}))
         occupied.append((start, finish))
 
@@ -193,6 +226,14 @@ def _numbers(text):
     denominators = {"half": 2, "halves": 2, "third": 3, "thirds": 3, "quarter": 4, "quarters": 4, "fourth": 4, "fourths": 4}
     for match in re.finditer(r"\b(" + fraction_words + r")[ -]+(" + "|".join(denominators) + r")\b", text):
         add(match.start(), match.end(), Decimal(_EN_VALUES[match[1]]) / denominators[match[2]])
+    # An indefinite article denotes a fraction only in fraction-shaped contexts,
+    # not in "a third party" or "a third person".
+    for match in re.finditer(r"\b(?:a|an) (half|third|quarter|fourth)(?=\s*(?:$|[,.!?;:]|of\b|less\b|more\b))", text):
+        add(match.start(), match.end(), Decimal(1) / denominators[match[1]])
+    # These denote the following narrative day, not an elapsed two-day duration.
+    relative_day = r"第二天|第2天|次日|翌日|\b(?:the )?(?:next|following|second) day\b"
+    for match in re.finditer(relative_day, text):
+        add(match.start(), match.end(), Decimal(1), unit="relative_day")
     for match in _NUMBER.finditer(text):
         if any(match.start() < b and match.end() > a for a, b in occupied):
             continue
@@ -217,11 +258,13 @@ def _numbers(text):
         if len(number) == 1 and not number.isdigit() and detected is None and unit is None and not ordinal and text.strip() != number and text[end:end+1] not in {"多", "余"}:
             continue  # Bare 一/七 in 一点/七龙珠 are not proven numerical facts.
         # 四五个小时 and 两三百个 describe ranges, not 45 or 2300.
-        range_match = re.fullmatch(r"([一二两三四五六七八九])([一二两三四五六七八九])([百千万]?)", number)
+        range_match = re.fullmatch(r"([一二两三四五六七八九])([一二两三四五六七八九])(十|百|千|万)?(万|亿)?", number)
         if range_match and detected is not None and not ordinal:
-            scale_value = {"": 1, "百": 100, "千": 1000, "万": 10000}[range_match[3]]
-            facts.append(NumericFact(Decimal(_DIGITS[range_match[1]] * scale_value), None))
-            add(match.start(), end, Decimal(_DIGITS[range_match[2]] * scale_value), unit)
+            scale_value = {None: 1, "十": 10, "百": 100, "千": 1000, "万": 10000}[range_match[3]]
+            scale_value *= {None: 1, "万": 10000, "亿": 100000000}[range_match[4]]
+            sign = -1 if (match["leading"] or match["sign"]) in {"-", "负"} else 1
+            facts.append(NumericFact(Decimal(sign * _DIGITS[range_match[1]] * scale_value), unit or detected))
+            add(match.start(), end, Decimal(sign * _DIGITS[range_match[2]] * scale_value), unit)
         else:
             dimension = value == 3 and text[end:end+1] == "d"
             add(match.start(), end, value, unit, optional=(value == 1 and not number[0].isdigit()) or dimension)
@@ -329,3 +372,13 @@ def meaning_guard_scope(mode):
             "limits": ["No audio verification or general semantic certification",
                        "Vague quantities and contextual/idiomatic number meanings are not fully assessed",
                        "Conservative checks can require review of legitimate paraphrases"]}
+
+
+def review_facts(text):
+    """Supported literal facts for advisory comparisons, never acoustic approval."""
+    try:
+        facts = _numbers(text)
+        return {"numbers": sorted((format(f.value.normalize(), 'f'), f.unit or "") for f in facts),
+                "negations": sorted(_negations(text).items()), "supported": True}
+    except (ValueError, ArithmeticError):
+        return {"numbers": [], "negations": [], "supported": False}

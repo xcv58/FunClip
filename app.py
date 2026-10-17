@@ -3,6 +3,7 @@ import os
 import sys
 import time
 import threading
+from pathlib import Path
 import soundfile as sf
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
@@ -22,6 +23,10 @@ try:
     from funasr import AutoModel
     from funclip.llm.srt_corrector import correct_srt_content
     from funclip.llm.model_config import DEFAULT_LLM_MODEL, LLM_MODEL_CHOICES
+    from funclip.numeric_spans import numeric_span_status_suffix
+    from funclip.glossary import glossary_choices, resolve_glossary
+    from funclip.review_queue import write_review_bundle, decide_review_item, save_review_bundle, REVIEW_LABELS, review_details, review_time
+    from funclip.review_queue import create_review_directory, touch_review_artifacts
 except ImportError as e:
     st.error(f"Error importing modules: {e}")
     st.stop()
@@ -59,7 +64,9 @@ def load_models():
 # --- 5. HELPER: RESET STATE ---
 def reset_state():
     """Clears results if a new file is uploaded."""
-    keys_to_clear = ['res_text', 'res_srt', 'recognition_srt', 'srt_filename', 'processing_done', 'res_srt_corrected']
+    keys_to_clear = ['res_text', 'res_srt', 'recognition_srt', 'correction_source_srt',
+                     'numeric_span_report', 'review_queue', 'review_queue_path', 'review_bundle_path',
+                     'recognition_glossary_id', 'srt_filename', 'processing_done', 'res_srt_corrected']
     for key in keys_to_clear:
         if key in st.session_state:
             del st.session_state[key]
@@ -74,6 +81,15 @@ try:
 except Exception as e:
     st.error(f"Failed to load models: {e}")
     st.stop()
+
+profiles = glossary_choices()
+glossary_id = st.selectbox('Episode glossary', options=[v for _, v in profiles],
+                         format_func=lambda v: dict((value, label) for label, value in profiles)[v])
+glossary_mode = st.selectbox('Glossary use', options=['reference', 'hints'],
+                           format_func=lambda v: 'Reference only' if v == 'reference' else 'Recognition hints with comparison',
+                           help='Hints also run an unbiased comparison and take additional recognition time')
+review_context = st.checkbox('Compare risky passages with another audio window', value=False,
+                            help='Same ASR model Up to 6 windows and 120 seconds No automatic replacements')
 
 # Attach callback to clear results when file changes
 uploaded_file = st.file_uploader(
@@ -126,13 +142,15 @@ if uploaded_file is not None:
             timer_placeholder = st.empty()
             
             def run_inference():
+                options = dict(glossary=resolve_glossary(glossary_id), glossary_mode=glossary_mode,
+                               compare_hints=glossary_mode == 'hints', review_context=review_context)
                 _, ext = os.path.splitext(uploaded_file.name)
                 if ext.lower() in ['.mp4', '.avi', '.mkv', '.mov']:
-                    return audio_clipper.video_recog(input_path, sd_switch='no', output_dir=temp_dir)
+                    return audio_clipper.video_recog(input_path, sd_switch='no', output_dir=temp_dir, **options)
                 else:
                     import librosa
                     wav, sr = librosa.load(input_path, sr=16000)
-                    return audio_clipper.recog((sr, wav), sd_switch='no')
+                    return audio_clipper.recog((sr, wav), sd_switch='no', **options)
 
             start_time = time.time()
             task = AsyncTask(run_inference, ())
@@ -157,6 +175,17 @@ if uploaded_file is not None:
                 st.session_state['res_text'] = res_text
                 st.session_state['res_srt'] = res_srt
                 st.session_state['recognition_srt'] = state.get('recognition_srt', res_srt)
+                st.session_state['correction_source_srt'] = state.get(
+                    'correction_source_srt', state.get('recognition_srt', res_srt)
+                )
+                st.session_state['numeric_span_report'] = state.get('numeric_span_report')
+                st.session_state['recognition_glossary_id'] = glossary_id
+                if state.get('review_queue') is not None:
+                    audio = state.get('audio_input')
+                    queue, queue_path, bundle_path = write_review_bundle(state['review_queue'],
+                        audio[1] if audio else None, state.get('recognition_sample_rate', 16000),
+                        create_review_directory())
+                    st.session_state.update(review_queue=queue, review_queue_path=queue_path, review_bundle_path=bundle_path)
                 st.session_state['srt_filename'] = f"{base_name}.srt"
                 st.session_state['processing_done'] = True
                 
@@ -172,6 +201,13 @@ if uploaded_file is not None:
     # This block runs even after you click download, because it checks session_state
     if st.session_state.get('processing_done'):
         st.divider()
+        numeric_report = st.session_state.get('numeric_span_report')
+        numeric_status = numeric_span_status_suffix(numeric_report).strip()
+        if numeric_status:
+            if numeric_report.get('issues'):
+                st.warning(numeric_status)
+            else:
+                st.caption(numeric_status)
         col1, col2 = st.columns(2)
         
         with col1:
@@ -192,6 +228,30 @@ if uploaded_file is not None:
             )
             
             st.text_area("SRT Content", st.session_state['res_srt'], height=350, label_visibility="collapsed")
+
+        if st.session_state.get('review_queue'):
+            with st.expander('Audio review queue'):
+                queue = st.session_state['review_queue']
+                touch_review_artifacts(Path(st.session_state['review_queue_path']).parent)
+                st.caption(f"{len(queue['items'])} candidates Decisions do not edit subtitles")
+                items = {i['id']: i for i in queue['items']}
+                if items:
+                    item_id = st.selectbox('Passage to review', list(items),
+                        format_func=lambda v: f"{items[v]['priority']} {review_time(items[v]['start_ms'])} {REVIEW_LABELS[items[v]['code']]}")
+                    item = items[item_id]
+                    st.text(review_details(item))
+                    if item.get('audio_file'):
+                        st.audio(item['audio_file'])
+                    decision = st.radio('Your decision', ['unresolved', 'keep_original', 'needs_edit'], key='review_decision')
+                    if st.button('Record decision'):
+                        queue = decide_review_item(queue, item_id, decision)
+                        st.session_state['review_queue'] = queue
+                        save_review_bundle(queue, Path(st.session_state['review_queue_path']).parent)
+                        st.success('Decision recorded Subtitle text is unchanged')
+                st.download_button('Download review data', Path(st.session_state['review_queue_path']).read_bytes(),
+                                   file_name='review.json', mime='application/json')
+                st.download_button('Download review report with audio', Path(st.session_state['review_bundle_path']).read_bytes(),
+                                   file_name='review.zip', mime='application/zip')
 
         # --- 7. AI AUTO CORRECTION ---
         st.divider()
@@ -234,7 +294,8 @@ if uploaded_file is not None:
             base_url_input = st.text_input("Base URL (Optional)", value=base_url_env, help="e.g. https://api.moonshot.cn/v1")
 
         if st.button("✨ Run Auto Correction"):
-            target_srt = st.session_state.get('recognition_srt', st.session_state['res_srt'])
+            target_srt = st.session_state.get('correction_source_srt',
+                st.session_state.get('recognition_srt', st.session_state['res_srt']))
             # Use user input if provided, otherwise fall back to env (handled by litellm/backend)
             effective_api_key = api_key_input if api_key_input else None
             effective_base_url = base_url_input if base_url_input else None
@@ -249,7 +310,8 @@ if uploaded_file is not None:
                         srt_content=target_srt,
                         api_key=effective_api_key,
                         base_url=effective_base_url,
-                        model=model_input
+                        model=model_input,
+                        glossary=resolve_glossary(st.session_state.get('recognition_glossary_id')),
                     )
                     st.session_state['res_srt_corrected'] = corrected_text
                     st.success("✅ Correction Complete!")

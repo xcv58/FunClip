@@ -1,0 +1,185 @@
+{
+  "version": 1,
+  "scope": "Local cached ASR replay and deterministic meaning guards; no acoustic correction or new LLM requests",
+  "cases": [
+    {
+      "id": "fire-110-136",
+      "evidence": "fire-110-136.json",
+      "evidence_sha256": "c0e652596912895bf715f723d3fc7ed1162ce19ec212947acfa8860a18b2d1b9",
+      "source_sha256": "93e07885eeb022fdbd5d515aacad65078bc493d68488fad5d9992f0465144e66",
+      "source": "eval/model_migration_runs/2026-10-17/additional_three_audit/asr/fire-110-136.baseline.json",
+      "expected_text": "百分之八十三",
+      "expected_adjustments": 1,
+      "expected_kind": "ratio"
+    },
+    {
+      "id": "fire-319-344",
+      "evidence": "fire-319-344.json",
+      "evidence_sha256": "361e1b97f63cf5ffd19724a0a27f85fa332b121bff453685cd3dedd9d70d0ead",
+      "source_sha256": "e0e18aa4f69514fe6676b2b7a352b4194a7160b19cc95e957f882ca0cc216e42",
+      "source": "eval/model_migration_runs/2026-10-17/additional_three_audit/asr/fire-319-344.baseline.json",
+      "expected_text": "两百万美元",
+      "expected_adjustments": 1,
+      "expected_kind": "currency"
+    }
+  ],
+  "equivalent_controls": [
+    {
+      "source": "三分之一",
+      "translation": "a third",
+      "expected_accept": true,
+      "actual_accept": false,
+      "issues": [
+        {
+          "cue_id": 1,
+          "code": "numeric_fact_missing_or_changed"
+        },
+        {
+          "cue_id": 1,
+          "code": "numeric_fact_added_or_moved"
+        }
+      ],
+      "synthetic": true
+    },
+    {
+      "source": "三分之一",
+      "translation": "one third",
+      "expected_accept": true,
+      "actual_accept": true,
+      "issues": [],
+      "synthetic": true
+    },
+    {
+      "source": "四分之一",
+      "translation": "a quarter",
+      "expected_accept": true,
+      "actual_accept": false,
+      "issues": [
+        {
+          "cue_id": 1,
+          "code": "numeric_fact_missing_or_changed"
+        }
+      ],
+      "synthetic": true
+    },
+    {
+      "source": "第二天还来找我们",
+      "translation": "The next day she returned",
+      "expected_accept": true,
+      "actual_accept": false,
+      "issues": [
+        {
+          "cue_id": 1,
+          "code": "numeric_fact_missing_or_changed"
+        }
+      ],
+      "synthetic": true
+    },
+    {
+      "source": "2025年硅谷 AI 公司",
+      "translation": "In 2025 Silicon Valley AI firms",
+      "expected_accept": true,
+      "actual_accept": false,
+      "issues": [
+        {
+          "cue_id": 1,
+          "code": "numeric_fact_missing_or_changed"
+        },
+        {
+          "cue_id": 1,
+          "code": "numeric_fact_added_or_moved"
+        }
+      ],
+      "synthetic": true
+    },
+    {
+      "source": "30年6.5%的房贷",
+      "translation": "a 30-year mortgage at 6.5 percent",
+      "expected_accept": true,
+      "actual_accept": false,
+      "issues": [
+        {
+          "cue_id": 1,
+          "code": "numeric_fact_missing_or_changed"
+        },
+        {
+          "cue_id": 1,
+          "code": "numeric_fact_added_or_moved"
+        }
+      ],
+      "synthetic": true
+    },
+    {
+      "source": "五六十万美元",
+      "translation": "500000 to 600000 US dollars",
+      "expected_accept": true,
+      "actual_accept": false,
+      "issues": [
+        {
+          "cue_id": 1,
+          "code": "numeric_fact_added_or_moved"
+        }
+      ],
+      "synthetic": true
+    },
+    {
+      "source": "800亿美元",
+      "translation": "80 billion US dollars",
+      "expected_accept": true,
+      "actual_accept": true,
+      "issues": [],
+      "synthetic": true
+    },
+    {
+      "source": "800亿美元",
+      "translation": "800 billion US dollars",
+      "expected_accept": false,
+      "actual_accept": false,
+      "issues": [
+        {
+          "cue_id": 1,
+          "code": "numeric_fact_missing_or_changed"
+        },
+        {
+          "cue_id": 1,
+          "code": "numeric_fact_added_or_moved"
+        }
+      ],
+      "synthetic": true
+    },
+    {
+      "source": "83%",
+      "translation": "80 percent",
+      "expected_accept": false,
+      "actual_accept": false,
+      "issues": [
+        {
+          "cue_id": 1,
+          "code": "numeric_fact_missing_or_changed"
+        },
+        {
+          "cue_id": 1,
+          "code": "numeric_fact_added_or_moved"
+        }
+      ],
+      "synthetic": true
+    },
+    {
+      "source": "10100美元",
+      "translation": "10500 US dollars",
+      "expected_accept": false,
+      "actual_accept": false,
+      "issues": [
+        {
+          "cue_id": 1,
+          "code": "numeric_fact_missing_or_changed"
+        },
+        {
+          "cue_id": 1,
+          "code": "numeric_fact_added_or_moved"
+        }
+      ],
+      "synthetic": true
+    }
+  ]
+}

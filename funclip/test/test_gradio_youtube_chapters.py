@@ -1919,7 +1919,7 @@ class GradioYoutubeChapterIntegrationTests(unittest.TestCase):
             for block_fn in gradio_app.demo.fns.values()
             if getattr(block_fn.fn, "__name__", "") == "advance_chapter_revision"
         ]
-        self.assertEqual(len(producer_setting_revision_bindings), 12)
+        self.assertEqual(len(producer_setting_revision_bindings), 15)
         self.assertTrue(all(
             len(block_fn.inputs) == 1 and len(block_fn.outputs) == 1
             for block_fn in producer_setting_revision_bindings
@@ -1931,6 +1931,9 @@ class GradioYoutubeChapterIntegrationTests(unittest.TestCase):
         self.assertCountEqual(
             producer_setting_labels,
             [
+                "Episode glossary",
+                "Glossary use",
+                "Compare risky passages with another audio window",
                 "API Key (OpenAI/Compatible)",
                 "Model",
                 "Custom Model Name",
@@ -1967,7 +1970,8 @@ class GradioYoutubeChapterIntegrationTests(unittest.TestCase):
             if getattr(block_fn.fn, "__name__", "") == "stage_english_translation_outputs"
         )
         self.assertEqual(english_callback.trigger_after, english_revision_binding[0])
-        self.assertEqual(len(english_callback.inputs), 6)
+        self.assertEqual(len(english_callback.inputs), 7)
+        self.assertIs(english_callback.inputs[-1], gradio_app.glossary_selector)
 
         publication_callback_names = {
             "advance_chapter_revision",

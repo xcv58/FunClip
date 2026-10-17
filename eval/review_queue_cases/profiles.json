@@ -1,0 +1,242 @@
+{
+  "soup": {
+    "version": 1,
+    "id": "audit-soup",
+    "label": "Audit only soup",
+    "entries": [
+      {
+        "id": "song-fa",
+        "zh_hans": "松发",
+        "zh_hant": "松發",
+        "english": "Song Fa",
+        "evidence": "Storefront frame 36 seconds",
+        "asr_hotwords": [
+          "松发"
+        ]
+      },
+      {
+        "id": "legendary",
+        "zh_hans": "发传人",
+        "zh_hant": "發傳人",
+        "english": "Legendary",
+        "evidence": "Restaurant sign and edited title frame 377 seconds",
+        "asr_hotwords": [
+          "发传人"
+        ]
+      },
+      {
+        "id": "sun-fong",
+        "zh_hans": "新峰",
+        "zh_hant": "新峰",
+        "english": "Sun Fong",
+        "evidence": "Edited restaurant title frame 598 seconds plus final reference",
+        "asr_hotwords": [
+          "新峰"
+        ]
+      },
+      {
+        "id": "qing-long",
+        "zh_hans": "青龙菜",
+        "zh_hant": "青龍菜",
+        "english": "qing long cai",
+        "evidence": "Approved reference 704 seconds; exact spoken name still checked against local audio",
+        "asr_hotwords": [
+          "青龙菜"
+        ]
+      },
+      {
+        "id": "spicy-pork",
+        "zh_hans": "辛辣扣肉",
+        "zh_hant": "辛辣扣肉",
+        "english": "spicy braised pork",
+        "evidence": "Approved reference 156 seconds; not independently certified from a printed menu",
+        "asr_hotwords": [
+          "辛辣扣肉"
+        ]
+      },
+      {
+        "id": "original-pot",
+        "zh_hans": "正宗空煲",
+        "zh_hant": "正宗空煲",
+        "english": "original bak kut teh",
+        "evidence": "Printed menu frame 635 seconds",
+        "asr_hotwords": [
+          "正宗空煲"
+        ]
+      },
+      {
+        "id": "klang",
+        "zh_hans": "巴生",
+        "zh_hant": "巴生",
+        "english": "Klang",
+        "evidence": "Approved reference 937 seconds",
+        "asr_hotwords": [
+          "巴生"
+        ]
+      }
+    ]
+  },
+  "durian": {
+    "version": 1,
+    "id": "audit-durian",
+    "label": "Audit only durian",
+    "entries": [
+      {
+        "id": "balik-pulau",
+        "zh_hans": "浮罗山背",
+        "zh_hant": "浮羅山背",
+        "english": "Balik Pulau",
+        "evidence": "Approved reference; visual location title is corroborating editorial evidence only",
+        "asr_hotwords": [
+          "浮罗山背"
+        ],
+        "asr_confusions": [
+          "普罗山贝"
+        ]
+      },
+      {
+        "id": "cempedak",
+        "zh_hans": "尖不辣",
+        "zh_hant": "尖不辣",
+        "english": "cempedak",
+        "evidence": "Approved reference 185 seconds; fruit image does not certify botanical identity",
+        "asr_hotwords": [
+          "尖不辣"
+        ],
+        "spoken_aliases": [
+          "榴莲蜜"
+        ]
+      },
+      {
+        "id": "red-prawn",
+        "zh_hans": "红虾",
+        "zh_hant": "紅蝦",
+        "english": "Red Prawn",
+        "evidence": "Approved cultivar wording 159 seconds",
+        "asr_hotwords": [
+          "红虾"
+        ]
+      },
+      {
+        "id": "yellow-ginger",
+        "zh_hans": "老树黄姜",
+        "zh_hant": "老樹黃姜",
+        "english": "Old Tree Yellow Ginger",
+        "evidence": "Approved cultivar wording 333 seconds",
+        "asr_hotwords": [
+          "老树黄姜"
+        ]
+      },
+      {
+        "id": "rambutan",
+        "zh_hans": "红毛丹",
+        "zh_hant": "紅毛丹",
+        "english": "rambutan",
+        "evidence": "Approved reference 402 seconds",
+        "asr_hotwords": [
+          "红毛丹"
+        ]
+      },
+      {
+        "id": "nutmeg",
+        "zh_hans": "豆蔻",
+        "zh_hant": "豆蔻",
+        "english": "nutmeg",
+        "evidence": "Approved reference; no independent species or botanical claim",
+        "asr_hotwords": [
+          "豆蔻"
+        ]
+      },
+      {
+        "id": "laksa",
+        "zh_hans": "叻沙",
+        "zh_hant": "叻沙",
+        "english": "laksa",
+        "evidence": "Approved reference 599 seconds",
+        "asr_hotwords": [
+          "叻沙"
+        ]
+      },
+      {
+        "id": "ginger-flower",
+        "zh_hans": "姜花",
+        "zh_hant": "姜花",
+        "english": "ginger flower",
+        "evidence": "Approved reference 603 seconds",
+        "asr_hotwords": [
+          "姜花"
+        ]
+      },
+      {
+        "id": "bunga-kantan",
+        "zh_hans": "bunga kantan",
+        "zh_hant": "bunga kantan",
+        "english": "bunga kantan",
+        "evidence": "Approved mixed language reference 606 seconds",
+        "asr_hotwords": [
+          "bunga kantan"
+        ]
+      },
+      {
+        "id": "rambutan-en",
+        "zh_hans": "rambutan",
+        "zh_hant": "rambutan",
+        "english": "rambutan",
+        "evidence": "Approved mixed language reference 406 seconds",
+        "asr_hotwords": [
+          "rambutan"
+        ]
+      }
+    ]
+  },
+  "fire": {
+    "version": 1,
+    "id": "audit-fire",
+    "label": "Audit only fire",
+    "entries": [
+      {
+        "id": "fire",
+        "zh_hans": "FIRE",
+        "zh_hant": "FIRE",
+        "english": "FIRE",
+        "evidence": "Approved acronym in source",
+        "asr_hotwords": [
+          "FIRE"
+        ]
+      },
+      {
+        "id": "taxable-income",
+        "zh_hans": "taxable income",
+        "zh_hant": "taxable income",
+        "english": "taxable income",
+        "evidence": "Approved mixed language reference 296 seconds",
+        "asr_hotwords": [
+          "taxable income"
+        ]
+      },
+      {
+        "id": "opportunity-cost",
+        "zh_hans": "opportunity cost",
+        "zh_hant": "opportunity cost",
+        "english": "opportunity cost",
+        "evidence": "Approved mixed language reference 377 seconds",
+        "asr_hotwords": [
+          "opportunity cost"
+        ]
+      },
+      {
+        "id": "net-worth",
+        "zh_hans": "net worth",
+        "zh_hant": "net worth",
+        "english": "net worth",
+        "evidence": "Approved mixed language reference 821 seconds",
+        "asr_hotwords": [
+          "net worth"
+        ],
+        "asr_confusions": [
+          "Network"
+        ]
+      }
+    ]
+  }
+}

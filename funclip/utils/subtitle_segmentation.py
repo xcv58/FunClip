@@ -5,9 +5,10 @@ Adapted from FunClip's timestamp-based splitting in videoclipper.py at upstream
 or pauses instead of reconstructing text from punctuation-free tokens.
 """
 
-import math
-from numbers import Real
 import re
+
+from .subtitle_alignment import aligned_tokens as _aligned_tokens
+from funclip.numeric_spans import numeric_breaks
 
 
 MAX_SUBTITLE_DURATION_MS = 8000
@@ -15,30 +16,7 @@ MAX_SUBTITLE_TOKENS = 30
 PAUSE_BREAK_MS = 300
 
 _CHINESE = re.compile(r"[\u4e00-\u9fff]")
-# One Chinese character or one non-Chinese word, matching Paraformer timing units.
-# In particular, do not let an English word consume adjacent Chinese characters.
-_TOKEN = re.compile(r"[\u4e00-\u9fff]|[^\W\u4e00-\u9fff]+(?:[-'’][^\W\u4e00-\u9fff]+)*")
 _OPENING_PUNCTUATION = frozenset("（([{【《〈「『“‘")
-
-
-def _aligned_tokens(text, timestamps):
-    tokens = list(_TOKEN.finditer(text))
-    if not isinstance(timestamps, (list, tuple)) or len(tokens) != len(timestamps):
-        return []
-    previous_end = 0
-    for pair in timestamps:
-        if not isinstance(pair, (list, tuple)) or len(pair) != 2:
-            return []
-        if any(
-            isinstance(value, bool) or not isinstance(value, Real) or not math.isfinite(value)
-            for value in pair
-        ):
-            return []
-        start, end = pair
-        if start < previous_end or end <= start:
-            return []
-        previous_end = end
-    return tokens
 
 
 def _text_boundaries(text, tokens):
@@ -55,11 +33,13 @@ def _text_boundaries(text, tokens):
     return boundaries
 
 
-def _preferred_end(text, tokens, timestamps, boundaries, start, limit):
+def _preferred_end(text, tokens, timestamps, boundaries, start, limit, forbidden):
     # Search the latter half of the available cue to avoid tiny fragments.
     first_candidate = start + max(1, (limit - start + 1) // 2)
     best_end, best_score = limit, (0, limit)
     for end in range(first_candidate, limit + 1):
+        if end in forbidden:
+            continue
         punctuation = text[tokens[end - 1].end():boundaries[end]]
         if any(mark in punctuation for mark in "。！？!?；;"):
             strength = 3
@@ -97,6 +77,7 @@ def split_long_chinese_sentence(sentence):
         return [sentence]
 
     boundaries = _text_boundaries(text, tokens)
+    forbidden = numeric_breaks(text, tokens)
     chunks = []
     start = 0
     while start < len(tokens):
@@ -106,9 +87,19 @@ def split_long_chinese_sentence(sentence):
             if timestamps[limit][1] - timestamps[start][0] > MAX_SUBTITLE_DURATION_MS:
                 break
             limit += 1
+        # Prefer an earlier safe boundary; a numeric span itself may exceed a
+        # display target, in which case retain its real timing rather than split it.
+        safe_limit = limit
+        while safe_limit > start and safe_limit in forbidden:
+            safe_limit -= 1
+        if safe_limit == start:
+            safe_limit = limit
+            while safe_limit < len(tokens) and safe_limit in forbidden:
+                safe_limit += 1
+        limit = safe_limit
         end = (
             limit if limit == len(tokens)
-            else _preferred_end(text, tokens, timestamps, boundaries, start, limit)
+            else _preferred_end(text, tokens, timestamps, boundaries, start, limit, forbidden)
         )
         chunk = dict(sentence)
         chunk.update(

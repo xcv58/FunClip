@@ -1,4 +1,5 @@
 import gradio as gr
+from gradio.data_classes import FileData
 from gradio.processing_utils import get_upload_folder
 import atexit
 import base64
@@ -40,7 +41,7 @@ try:
         convert_srt_to_traditional,
         normalize_traditional_for_validation,
     )
-    from funclip.llm.srt_translator import translate_srt_to_english
+    from funclip.llm.srt_translator import translate_srt_to_english, parse_translation_srt
     from funclip.llm.youtube_chapters import (
         ChapterGenerationError,
         MAX_LLM_MODEL_IDENTIFIER_CHARACTERS,
@@ -62,10 +63,14 @@ try:
         run_with_media_cleanup,
         validate_gradio_upload_path,
     )
-    from funclip.service_contract import no_speech_result, speech_result, recognition_evidence
+    from funclip.service_contract import no_speech_result, speech_result, recognition_evidence, recognition_correction_source
+    from funclip.numeric_spans import numeric_span_status_suffix
     from funclip.subtitle_style import SUBTITLE_STYLE, SubtitleFormattingError
     from funclip.subtitle_quality import build_srt_quality_report, quality_status_suffix
     from funclip.subtitle_meaning import meaning_guard_scope
+    from funclip.glossary import resolve_glossary, glossary_choices, glossary_report, validate_glossary_mode
+    from funclip.review_queue import build_review_queue, write_review_bundle, save_review_bundle, decide_review_item, REVIEW_LABELS, review_details, review_time
+    from funclip.review_queue import create_review_directory, touch_review_artifacts
 except ImportError as e:
     print(f"Error importing modules: {e}")
     sys.exit(1)
@@ -1669,12 +1674,37 @@ def save_recognition_evidence(text, srt_content, recognition_state, base_name):
     return evidence, evidence_path
 
 
+def glossary_options(glossary_id=None):
+    """Resolve immutable request context before processing uploads or paid calls."""
+    if glossary_id is not None and not isinstance(glossary_id, str):
+        raise gr.Error("Choose a named episode glossary profile.")
+    profile = resolve_glossary(glossary_id)
+    return {"glossary": profile} if profile is not None else {}
+
+
+def glossary_srt_report(content, glossary_id, *, english=False):
+    if resolve_glossary(glossary_id) is None:
+        return glossary_report([], None)
+    return glossary_report([(c.index, c.text) for c in parse_translation_srt(content)],
+                           glossary_id, english=english)
+
+
+def glossary_status_suffix(report):
+    if not report or not report.get("profile"):
+        return ""
+    return (f" Glossary {report['profile']['id']} active"
+            f" with {len(report.get('issues', []))} terminology item(s) to review")
+
+
 def process_media(
     file_path,
     session_state,
     expected_chapter_revision=None,
     progress=gr.Progress(),
     request: gr.Request = None,
+    glossary_id=None,
+    glossary_mode=None,
+    review_context=False,
 ):
     """Process audio/video file and return transcription results."""
     if not chapter_revision_is_current(expected_chapter_revision, request):
@@ -1684,6 +1714,15 @@ def process_media(
         gr.Warning("Please upload a file first.")
         return None, None, None, "No file uploaded", session_state
     
+    options = glossary_options(glossary_id)
+    if glossary_mode is not None:
+        validate_glossary_mode(glossary_mode)
+        options.update(glossary_mode=glossary_mode, compare_hints=glossary_mode == 'hints')
+    if type(review_context) is not bool:
+        raise gr.Error("Choose whether to run alternate audio context checks.")
+    if review_context:
+        options['review_context'] = True
+    session_state["glossary_id"] = options["glossary"].id if options.get('glossary') else None
     start_time = time.time()
     
     # Get original filename for later use (stored in session state)
@@ -1707,12 +1746,12 @@ def process_media(
         if is_video:
             with TemporaryDirectory() as temp_dir:
                 res_text, res_srt, recognition_state = audio_clipper.video_recog(
-                    file_path, sd_switch='no', output_dir=temp_dir
+                    file_path, sd_switch='no', output_dir=temp_dir, **options
                 )
         else:
             import librosa
             wav, sr = librosa.load(file_path, sr=16000)
-            res_text, res_srt, recognition_state = audio_clipper.recog((sr, wav), sd_switch='no')
+            res_text, res_srt, recognition_state = audio_clipper.recog((sr, wav), sd_switch='no', **options)
     except SubtitleFormattingError as exc:
         recognition_state = getattr(exc, "recognition_state", {})
         _, evidence_path = save_recognition_evidence(
@@ -1739,6 +1778,20 @@ def process_media(
         res_srt, media_duration_seconds=duration_sec if duration_sec > 0 else None
     )
     session_state["quality_report"] = quality_report
+    session_state["glossary_report"] = recognition_state.get("glossary_report")
+    session_state["numeric_span_report"] = recognition_state.get("numeric_span_report")
+    queue = recognition_state.get('review_queue')
+    if queue is None:
+        queue = build_review_queue(evidence, glossary=session_state.get('glossary_id'))
+    queue['media_name'] = original_name
+    audio = recognition_state.get('audio_input')
+    waveform = audio[1] if isinstance(audio, tuple) and len(audio) == 2 else None
+    review_directory = create_review_directory()
+    queue, queue_path, bundle_path = write_review_bundle(
+        queue, waveform, recognition_state.get('recognition_sample_rate', 16000), review_directory
+    )
+    session_state.update(review_queue=queue, review_queue_file_path=queue_path,
+                         review_bundle_file_path=bundle_path)
     
     # Save SRT to a unique temp file path to avoid cross-request collisions.
     srt_path = create_unique_srt_path(base_name, prefix="transcribe_")
@@ -1748,6 +1801,13 @@ def process_media(
     # Format status message
     status_msg = f"✅ Completed in {total_time:.2f}s ({speed_x:.1f}x speed)"
     status_msg += quality_status_suffix([quality_report])
+    status_msg += glossary_status_suffix(session_state.get("glossary_report"))
+    status_msg += numeric_span_status_suffix(session_state.get("numeric_span_report"))
+    if queue['items']:
+        status_msg += f" {len(queue['items'])} audio review candidate(s)"
+    unsupported = recognition_state.get("glossary", {}).get("unsupported_hotwords", [])
+    if unsupported:
+        status_msg += f" Unsupported ASR spellings require review: {' '.join(unsupported)}"
     
     # Format text with proper line breaks for Markdown display
     formatted_text = res_text.replace("\n", "\n\n") if res_text else ""
@@ -1758,9 +1818,55 @@ def process_media(
                 os.remove(stale_path)
             except OSError:
                 pass
+        shutil.rmtree(review_directory, ignore_errors=True)
         return _unchanged_outputs(5)
     
     return formatted_text, res_srt, srt_path, status_msg, session_state
+
+
+def review_panel_outputs(state):
+    state = state or {}
+    queue = state.get('review_queue') or {}
+    items = queue.get('items', [])
+    choices = [(f"{i['priority']} {review_time(i['start_ms'])} {REVIEW_LABELS[i['code']]}", i['id']) for i in items]
+    summary = (f"{len(items)} candidates · {sum(i['decision'] == 'unresolved' for i in items)} unresolved. "
+               "Listen before deciding. Decisions do not edit subtitles.") if items else "No review candidates in this result."
+    if queue.get('omitted_items'):
+        summary += f" {queue['omitted_items']} additional candidates exceed the report limit."
+    if queue.get('context_skipped_sentence_ids'):
+        summary += " Some context checks were skipped at the request budget."
+    return summary, gr.update(choices=choices, value=None), None, '', state.get('review_queue_file_path'), state.get('review_bundle_file_path')
+
+
+def preview_review_item(item_id, state):
+    item = next((i for i in (state or {}).get('review_queue', {}).get('items', []) if i['id'] == item_id), None)
+    if item is None:
+        return None, ''
+    if (state or {}).get('review_queue_file_path'):
+        touch_review_artifacts(os.path.dirname(state['review_queue_file_path']))
+    # Escape evidence before showing it in a Markdown-capable component.
+    import html
+    audio_path = item.get('audio_file')
+    detail = review_details(item)
+    if audio_path and not os.path.isfile(audio_path):
+        audio_path = None
+        detail += '\n\nReview audio expired Process the media again to replay it'
+    return audio_path, '<pre style="white-space:pre-wrap;overflow-wrap:anywhere">' + html.escape(detail) + '</pre>'
+
+
+def record_review_decision(item_id, decision, state):
+    state = dict(state or {})
+    try:
+        queue = decide_review_item(state.get('review_queue') or {'items': []}, item_id, decision)
+    except ValueError as exc:
+        raise gr.Error(str(exc)) from exc
+    queue_path = state.get('review_queue_file_path')
+    if not queue_path or not os.path.isfile(queue_path):
+        raise gr.Error('This review report is unavailable. Process the media again.')
+    touch_review_artifacts(os.path.dirname(queue_path))
+    queue, _, _ = save_review_bundle(queue, os.path.dirname(queue_path))
+    state['review_queue'] = queue
+    return state
 
 
 def get_api_key_status():
@@ -2029,6 +2135,7 @@ def run_llm_correction_for_content(
     model_name,
     custom_model,
     base_url,
+    glossary_id=None,
 ):
     """Run AI correction for one SRT content string."""
     start_time = time.time()
@@ -2036,6 +2143,7 @@ def run_llm_correction_for_content(
     if not original_srt or not original_srt.strip():
         raise gr.Error("No SRT content found for AI correction.")
 
+    options = glossary_options(glossary_id)
     eff_api_key, eff_base_url, effective_model = resolve_llm_config(
         api_key=api_key,
         model_name=model_name,
@@ -2049,6 +2157,7 @@ def run_llm_correction_for_content(
             api_key=eff_api_key,
             base_url=eff_base_url,
             model=effective_model,
+            **options,
         )
     except Exception as e:
         raise gr.Error(format_llm_error(e, "AI auto correction"))
@@ -2072,15 +2181,15 @@ def run_llm_correction_for_content(
     elapsed_time = time.time() - start_time
     status_msg = f"✅ Correction completed in {elapsed_time:.2f}s"
     status_msg += quality_status_suffix([build_srt_quality_report(corrected_srt)])
+    status_msg += glossary_status_suffix(glossary_srt_report(original_srt, glossary_id))
     return original_srt, corrected_srt, traditional_srt, diff_html, orig_path, corr_path, trad_path, status_msg
 
 
-def run_llm_correction(original_srt, api_key, model_name, custom_model, base_url, session_state, progress=gr.Progress()):
+def run_llm_correction(original_srt, api_key, model_name, custom_model, base_url, session_state, progress=gr.Progress(), glossary_id=None):
     """Run LLM-based SRT correction from transcription pipeline content."""
     base_name = session_state.get("original_filename", "subtitles") if session_state else "subtitles"
     evidence = session_state.get("recognition_evidence", {}) if session_state else {}
-    if original_srt == evidence.get("rendered_srt"):
-        original_srt = evidence.get("original_srt", original_srt)
+    original_srt = recognition_correction_source(original_srt, evidence)
     return run_llm_correction_for_content(
         original_srt=original_srt,
         base_name=base_name,
@@ -2088,6 +2197,8 @@ def run_llm_correction(original_srt, api_key, model_name, custom_model, base_url
         model_name=model_name,
         custom_model=custom_model,
         base_url=base_url,
+        **({"glossary_id": glossary_id} if glossary_id is not None else
+           {"glossary_id": session_state.get("glossary_id")} if session_state and session_state.get("glossary_id") else {}),
     )
 
 
@@ -2181,12 +2292,13 @@ def translate_srt_to_traditional(srt_files):
     return preview_original, preview_translated, download_path, translator_state
 
 
-def translate_srt_to_english_fn(srt_files, api_key, model_name, custom_model, base_url):
+def translate_srt_to_english_fn(srt_files, api_key, model_name, custom_model, base_url, glossary_id=None):
     """Translate one or more SRT files from Simplified Chinese to English using LLM."""
     srt_paths = normalize_srt_file_input(srt_files)
     if not srt_paths:
         raise gr.Error("Please upload an SRT file first.")
 
+    options = glossary_options(glossary_id)
     eff_api_key, eff_base_url, effective_model = resolve_llm_config(
         api_key=api_key,
         model_name=model_name,
@@ -2199,6 +2311,7 @@ def translate_srt_to_english_fn(srt_files, api_key, model_name, custom_model, ba
     last_original = ""
     last_translated = ""
     quality_reports = []
+    glossary_reports = []
 
     for srt_file in srt_paths:
         with open(srt_file, 'r', encoding='utf-8') as f:
@@ -2212,7 +2325,8 @@ def translate_srt_to_english_fn(srt_files, api_key, model_name, custom_model, ba
                 srt_content=srt_content,
                 api_key=eff_api_key,
                 base_url=eff_base_url,
-                model=effective_model
+                model=effective_model,
+                **options,
             )
         except Exception as e:
             file_name = os.path.basename(srt_file)
@@ -2227,6 +2341,8 @@ def translate_srt_to_english_fn(srt_files, api_key, model_name, custom_model, ba
 
         output_paths.append(eng_path)
         quality_reports.append({"file_name": original_name, "report": build_srt_quality_report(english_srt)})
+        if options:
+            glossary_reports.append({"file_name": original_name, "report": glossary_srt_report(english_srt, glossary_id, english=True)})
         last_original = srt_content
         last_translated = english_srt
 
@@ -2247,6 +2363,8 @@ def translate_srt_to_english_fn(srt_files, api_key, model_name, custom_model, ba
         "latest_output_kind": "english",
         "quality_reports": quality_reports,
     }
+    if options:
+        translator_state["glossary_reports"] = glossary_reports
     return preview_original, preview_translated, download_path, translator_state
 
 
@@ -2296,12 +2414,14 @@ def run_llm_correction_for_files(
     model_name,
     custom_model,
     base_url,
+    glossary_id=None,
 ):
     """Run AI correction for one or more SRT files and return preview/diff/downloads."""
     srt_paths = normalize_srt_file_input(srt_files)
     if not srt_paths:
         raise gr.Error("Please provide SRT file(s) for AI correction.")
 
+    options = glossary_options(glossary_id)
     eff_api_key, eff_base_url, effective_model = resolve_llm_config(
         api_key=api_key,
         model_name=model_name,
@@ -2317,6 +2437,7 @@ def run_llm_correction_for_files(
     last_corrected = ""
     seen_names = {}
     quality_reports = []
+    terminology_reports = []
 
     for srt_path in srt_paths:
         with open(srt_path, 'r', encoding='utf-8') as f:
@@ -2331,6 +2452,7 @@ def run_llm_correction_for_files(
                 api_key=eff_api_key,
                 base_url=eff_base_url,
                 model=effective_model,
+                **options,
             )
         except Exception as e:
             file_name = os.path.basename(srt_path)
@@ -2352,6 +2474,8 @@ def run_llm_correction_for_files(
         original_paths.append(original_output_path)
         corrected_paths.append(corrected_output_path)
         quality_reports.append(build_srt_quality_report(corrected_srt))
+        if options:
+            terminology_reports.append(glossary_srt_report(srt_content, glossary_id))
         last_original = srt_content
         last_corrected = corrected_srt
 
@@ -2364,6 +2488,11 @@ def run_llm_correction_for_files(
     elapsed = time.time() - start_time
     status_msg = f"✅ AI correction completed for {len(corrected_paths)} file(s) in {elapsed:.2f}s"
     status_msg += quality_status_suffix(quality_reports)
+    if terminology_reports:
+        status_msg += glossary_status_suffix({
+            "profile": terminology_reports[0]["profile"],
+            "issues": [issue for report in terminology_reports for issue in report["issues"]],
+        })
     latest_traditional_srt = ""
     latest_traditional_base_name = ""
     if len(srt_paths) == 1 and len(corrected_paths) == 1:
@@ -2426,16 +2555,20 @@ def safe_translate_english_wrapper(
     base_url,
     expected_chapter_revision=None,
     request: gr.Request = None,
+    glossary_id=None,
 ):
     """Safe wrapper for English translation with UI-friendly status."""
     try:
         preview_original, preview_translated, download_path, translator_state = translate_srt_to_english_fn(
-            srt_files, api_key, model_name, custom_model, base_url
+            srt_files, api_key, model_name, custom_model, base_url,
+            **({"glossary_id": glossary_id} if glossary_id is not None else {}),
         )
         if not chapter_revision_is_current(expected_chapter_revision, request):
             return _unchanged_outputs(5)
         status_msg = "✅ English translation completed and SRT structure validated."
         status_msg += quality_status_suffix([item["report"] for item in translator_state.get("quality_reports", [])])
+        for item in translator_state.get("glossary_reports", []):
+            status_msg += glossary_status_suffix(item["report"])
         return preview_original, preview_translated, download_path, translator_state, status_msg
     except gr.Error as e:
         if not chapter_revision_is_current(expected_chapter_revision, request):
@@ -2855,12 +2988,17 @@ def stage_process_media_outputs(
     session_state,
     expected_chapter_revision,
     request: gr.Request = None,
+    glossary_id=None,
+    glossary_mode=None,
+    review_context=False,
 ):
     outputs = process_media(
         file_path,
         session_state,
         expected_chapter_revision=expected_chapter_revision,
         request=request,
+        **({"glossary_id": glossary_id} if glossary_id is not None else {}),
+        **({"glossary_mode": glossary_mode, "review_context": review_context} if glossary_mode is not None else {}),
     )
     return make_revisioned_output_candidate(
         outputs, expected_chapter_revision, request, channel="process"
@@ -2895,6 +3033,7 @@ def stage_english_translation_outputs(
     base_url,
     expected_chapter_revision,
     request: gr.Request = None,
+    glossary_id=None,
 ):
     outputs = safe_translate_english_wrapper(
         srt_files,
@@ -2904,6 +3043,7 @@ def stage_english_translation_outputs(
         base_url,
         expected_chapter_revision,
         request,
+        **({"glossary_id": glossary_id} if glossary_id is not None else {}),
     )
     return make_revisioned_output_candidate(
         outputs,
@@ -3069,10 +3209,13 @@ def stage_edited_chapter_outputs(
         release_staged_chapter_output_slot(reservation_token)
 
 
-def api_transcribe(file_path):
+def api_transcribe(file_path, glossary_id=None, *, glossary_mode=None, review_context=False):
     """API wrapper: transcribe audio/video file and return text + SRT."""
-    formatted_text, srt_content, srt_file_path, status_msg, state = process_media(file_path, {})
-    return {
+    options = {"glossary_id": glossary_id} if glossary_id is not None else {}
+    if glossary_mode is not None:
+        options.update(glossary_mode=glossary_mode, review_context=review_context)
+    formatted_text, srt_content, srt_file_path, status_msg, state = process_media(file_path, {}, **options)
+    result = {
         "text_markdown": formatted_text,
         "srt_content": srt_content,
         "srt_file_path": srt_file_path,
@@ -3080,10 +3223,24 @@ def api_transcribe(file_path):
         "recognition_evidence": state.get("recognition_evidence"),
         "recognition_evidence_file_path": state.get("recognition_evidence_file_path"),
         "quality_report": state.get("quality_report"),
+        "review_queue": state.get('review_queue'),
+        "review_queue_file_path": state.get('review_queue_file_path'),
+        "review_bundle_file_path": state.get('review_bundle_file_path'),
     }
 
+    if glossary_options(glossary_id):
+        result["glossary_report"] = state.get("glossary_report")
+    if state.get("numeric_span_report") is not None:
+        result["numeric_span_report"] = state["numeric_span_report"]
+    if glossary_mode is not None:
+        # FileData lets Gradio cache and serve these new API downloads. Plain
+        # server paths alone cannot provide a portable audio-review result.
+        result['review_files'] = [FileData(path=api_transcribe_output.move_resource_to_block_cache(state[key]), orig_name=name).model_dump()
+            for key, name in [('review_queue_file_path', 'review.json'), ('review_bundle_file_path', 'review.zip')]
+            if state.get(key)]
+    return result
 
-def api_srt_correct(srt_content, api_key, model_name, custom_model, base_url, return_traditional):
+def api_srt_correct(srt_content, api_key, model_name, custom_model, base_url, return_traditional, glossary_id=None):
     """API wrapper: AI-correct SRT text content."""
     original, corrected, traditional, diff_html, orig_path, corr_path, trad_path, status_msg = run_llm_correction_for_content(
         original_srt=srt_content,
@@ -3092,6 +3249,7 @@ def api_srt_correct(srt_content, api_key, model_name, custom_model, base_url, re
         model_name=model_name,
         custom_model=custom_model,
         base_url=base_url,
+        **({"glossary_id": glossary_id} if glossary_id is not None else {}),
     )
     result = {
         "original_srt": original,
@@ -3108,6 +3266,8 @@ def api_srt_correct(srt_content, api_key, model_name, custom_model, base_url, re
     if return_traditional:
         result["corrected_traditional_srt"] = traditional
         result["corrected_traditional_file_path"] = trad_path
+    if glossary_options(glossary_id):
+        result["glossary_report"] = glossary_srt_report(original, glossary_id)
     return result
 
 
@@ -3157,7 +3317,7 @@ def api_translate_srt_traditional_text(srt_files):
     return result
 
 
-def api_translate_srt_english(srt_files, api_key, model_name, custom_model, base_url):
+def api_translate_srt_english(srt_files, api_key, model_name, custom_model, base_url, glossary_id=None):
     """API wrapper: translate SRT file(s) to English via LLM."""
     preview_original, preview_translated, download_path, state = translate_srt_to_english_fn(
         srt_files=srt_files,
@@ -3165,8 +3325,9 @@ def api_translate_srt_english(srt_files, api_key, model_name, custom_model, base
         model_name=model_name,
         custom_model=custom_model,
         base_url=base_url,
+        **({"glossary_id": glossary_id} if glossary_id is not None else {}),
     )
-    return {
+    result = {
         "preview_original": preview_original,
         "preview_translated": preview_translated,
         "download_path": download_path,
@@ -3175,6 +3336,9 @@ def api_translate_srt_english(srt_files, api_key, model_name, custom_model, base
         "meaning_preservation": meaning_guard_scope("translation"),
     }
 
+    if glossary_options(glossary_id):
+        result["glossary_reports"] = state.get("glossary_reports", [])
+    return result
 
 def api_youtube_chapters(
     srt_content,
@@ -3251,7 +3415,10 @@ def run_async_transcribe_and_correct_job(job_id, payload):
                 message="Transcribing media to SRT...",
                 eta_seconds=estimate_transcribe_eta_seconds(duration_sec),
             )
-            transcribe_res = api_transcribe(media_path)
+            options = {"glossary_id": payload["glossary_id"]} if payload.get("glossary_id") else {}
+            if 'glossary_mode' in payload:
+                options.update(glossary_mode=payload['glossary_mode'], review_context=payload.get('review_context', False))
+            transcribe_res = api_transcribe(media_path, **options)
             # Keep recognition evidence inspectable even if correction or cleanup fails.
             update_async_job(job_id, transcription=transcribe_res)
             srt_content = transcribe_res.get("srt_content", "")
@@ -3262,7 +3429,7 @@ def run_async_transcribe_and_correct_job(job_id, payload):
             evidence = transcribe_res.get("recognition_evidence") or {}
             # Keep original phrase punctuation available to correction; formatting
             # of the validated corrected cues is the final local display step.
-            correction_source = evidence.get("original_srt", srt_content)
+            correction_source = recognition_correction_source(srt_content, evidence)
 
             set_async_stage(
                 job_id,
@@ -3278,6 +3445,7 @@ def run_async_transcribe_and_correct_job(job_id, payload):
                 custom_model=payload.get("custom_model", ""),
                 base_url=payload.get("base_url", ""),
                 return_traditional=bool(payload.get("return_traditional", True)),
+                **({"glossary_id": payload["glossary_id"]} if payload.get("glossary_id") else {}),
             )
             return speech_result(transcribe_res, correct_res)
 
@@ -3323,6 +3491,7 @@ def run_async_srt_correct_job(job_id, payload):
                 custom_model=payload.get("custom_model", ""),
                 base_url=payload.get("base_url", ""),
                 return_traditional=bool(payload.get("return_traditional", True)),
+                **({"glossary_id": payload["glossary_id"]} if payload.get("glossary_id") else {}),
             )
             final_srt = correct_res.get("corrected_srt") or srt_content
             complete_async_job(
@@ -3357,8 +3526,14 @@ def start_async_worker(job_id, target_fn, payload):
     thread.start()
 
 
-def api_submit_transcribe_and_correct(file_path, api_key, model_name, custom_model, base_url, return_traditional):
+def api_submit_transcribe_and_correct(file_path, api_key, model_name, custom_model, base_url, return_traditional, glossary_id=None,
+                                     *, glossary_mode=None, review_context=False):
     """Submit async transcribe+correct job and return job id for polling."""
+    options = glossary_options(glossary_id)
+    if glossary_mode is not None:
+        validate_glossary_mode(glossary_mode)
+    if type(review_context) is not bool:
+        raise gr.Error('Choose whether to run alternate audio context checks.')
     staged_media_path, cached_upload_path = stage_async_uploaded_file(file_path)
     try:
         job_id = create_async_job("transcribe_and_correct")
@@ -3371,6 +3546,10 @@ def api_submit_transcribe_and_correct(file_path, api_key, model_name, custom_mod
             "base_url": base_url,
             "return_traditional": return_traditional,
         }
+        if options:
+            payload["glossary_id"] = options["glossary"].id
+        if glossary_mode is not None:
+            payload.update(glossary_mode=glossary_mode, review_context=review_context)
         start_async_worker(job_id, run_async_transcribe_and_correct_job, payload)
     except Exception:
         try:
@@ -3383,8 +3562,9 @@ def api_submit_transcribe_and_correct(file_path, api_key, model_name, custom_mod
     return snapshot
 
 
-def api_submit_srt_correct(srt_content, api_key, model_name, custom_model, base_url, return_traditional):
+def api_submit_srt_correct(srt_content, api_key, model_name, custom_model, base_url, return_traditional, glossary_id=None):
     """Submit async correction-only job and return job id for polling."""
+    options = glossary_options(glossary_id)
     if not srt_content or not srt_content.strip():
         raise gr.Error("No SRT content provided.")
 
@@ -3397,6 +3577,8 @@ def api_submit_srt_correct(srt_content, api_key, model_name, custom_model, base_
         "base_url": base_url,
         "return_traditional": return_traditional,
     }
+    if options:
+        payload["glossary_id"] = options["glossary"].id
     start_async_worker(job_id, run_async_srt_correct_job, payload)
     snapshot = get_async_job_snapshot(job_id, include_result=False)
     snapshot["poll_api_name"] = "/async_job_status"
@@ -3408,6 +3590,37 @@ def api_async_job_status(job_id, include_result):
     if not job_id or not str(job_id).strip():
         raise gr.Error("job_id is required.")
     return get_async_job_snapshot(job_id, include_result=bool(include_result))
+
+
+def api_transcribe_with_glossary(file_path, glossary_id):
+    return api_transcribe(file_path, glossary_id=glossary_id)
+
+
+def api_transcribe_with_review(file_path, glossary_id, glossary_mode, review_context):
+    validate_glossary_mode(glossary_mode)
+    return api_transcribe(file_path, glossary_id=glossary_id, glossary_mode=glossary_mode, review_context=review_context)
+
+
+def api_submit_transcribe_and_correct_with_review(file_path, api_key, model_name, custom_model, base_url,
+                                                 return_traditional, glossary_id, glossary_mode, review_context):
+    return api_submit_transcribe_and_correct(file_path, api_key, model_name, custom_model, base_url,
+        return_traditional, glossary_id=glossary_id, glossary_mode=glossary_mode, review_context=review_context)
+
+
+def api_srt_correct_with_glossary(srt_content, api_key, model_name, custom_model, base_url, return_traditional, glossary_id):
+    return api_srt_correct(srt_content, api_key, model_name, custom_model, base_url, return_traditional, glossary_id=glossary_id)
+
+
+def api_translate_srt_english_with_glossary(srt_files, api_key, model_name, custom_model, base_url, glossary_id):
+    return api_translate_srt_english(srt_files, api_key, model_name, custom_model, base_url, glossary_id=glossary_id)
+
+
+def api_submit_transcribe_and_correct_with_glossary(file_path, api_key, model_name, custom_model, base_url, return_traditional, glossary_id):
+    return api_submit_transcribe_and_correct(file_path, api_key, model_name, custom_model, base_url, return_traditional, glossary_id=glossary_id)
+
+
+def api_submit_srt_correct_with_glossary(srt_content, api_key, model_name, custom_model, base_url, return_traditional, glossary_id):
+    return api_submit_srt_correct(srt_content, api_key, model_name, custom_model, base_url, return_traditional, glossary_id=glossary_id)
 
 
 with gr.Blocks(
@@ -3451,6 +3664,18 @@ with gr.Blocks(
     # Model Status
     gr.Markdown("✅ **AI Model Ready**")
     
+    glossary_selector = gr.Dropdown(
+        choices=glossary_choices(), value="none", label="Episode glossary",
+        info="Choose None to disable the glossary Spoken names and printed labels remain distinct",
+    )
+    glossary_mode_selector = gr.Dropdown(
+        choices=[('Reference only', 'reference'), ('Recognition hints with comparison', 'hints')],
+        value='reference', label='Glossary use',
+        info='Reference only keeps ASR unbiased Hints also run an unbiased comparison and take additional recognition time',
+    )
+    review_context_selector = gr.Checkbox(value=False, label='Compare risky passages with another audio window',
+        info='Optional local checks use the same ASR model Up to 6 windows and 120 seconds of audio No automatic replacements')
+
     # Per-session state to store filename and SRT (isolated per user session)
     session_state = gr.State(value={})
     chapter_revision_state = gr.State(value=0)
@@ -3468,6 +3693,9 @@ with gr.Blocks(
         api_media_input = gr.File(file_types=["audio", "video"], file_count="single")
         api_srt_files_input = gr.File(file_types=[".srt"], file_count="multiple")
         api_srt_text_input = gr.TextArea()
+        api_glossary_input = gr.Textbox(value="none")
+        api_glossary_mode_input = gr.Textbox(value='reference')
+        api_review_context_input = gr.Checkbox(value=False)
         api_job_id_input = gr.Textbox()
         api_api_key_input = gr.Textbox(type="password")
         api_model_name_input = gr.Textbox(value=DEFAULT_LLM_MODEL)
@@ -3610,6 +3838,31 @@ with gr.Blocks(
         api_description="Poll async job status by job_id. Set include_result=true to include completed payload."
     )
     
+    with gr.Group(visible=False):
+        gr.Button('transcribe_with_review').click(fn=api_transcribe_with_review,
+            inputs=[api_media_input, api_glossary_input, api_glossary_mode_input, api_review_context_input],
+            outputs=[api_transcribe_output], api_name='transcribe_with_review')
+        gr.Button('submit_transcribe_and_correct_with_review').click(fn=api_submit_transcribe_and_correct_with_review,
+            inputs=[api_media_input, api_api_key_input, api_model_name_input, api_custom_model_input,
+                    api_base_url_input, api_return_traditional_input, api_glossary_input,
+                    api_glossary_mode_input, api_review_context_input],
+            outputs=[api_submit_transcribe_correct_output], api_name='submit_transcribe_and_correct_with_review')
+        gr.Button("transcribe_with_glossary").click(fn=api_transcribe_with_glossary,
+            inputs=[api_media_input, api_glossary_input],
+            outputs=[api_transcribe_output], api_name="transcribe_with_glossary")
+        gr.Button("srt_correct_with_glossary").click(fn=api_srt_correct_with_glossary,
+            inputs=[api_srt_text_input, api_api_key_input, api_model_name_input, api_custom_model_input, api_base_url_input, api_return_traditional_input, api_glossary_input],
+            outputs=[api_correct_output], api_name="srt_correct_with_glossary")
+        gr.Button("srt_translate_english_with_glossary").click(fn=api_translate_srt_english_with_glossary,
+            inputs=[api_srt_files_input, api_api_key_input, api_model_name_input, api_custom_model_input, api_base_url_input, api_glossary_input],
+            outputs=[api_translate_en_output], api_name="srt_translate_english_with_glossary")
+        gr.Button("submit_transcribe_and_correct_with_glossary").click(fn=api_submit_transcribe_and_correct_with_glossary,
+            inputs=[api_media_input, api_api_key_input, api_model_name_input, api_custom_model_input, api_base_url_input, api_return_traditional_input, api_glossary_input],
+            outputs=[api_submit_transcribe_correct_output], api_name="submit_transcribe_and_correct_with_glossary")
+        gr.Button("submit_srt_correct_with_glossary").click(fn=api_submit_srt_correct_with_glossary,
+            inputs=[api_srt_text_input, api_api_key_input, api_model_name_input, api_custom_model_input, api_base_url_input, api_return_traditional_input, api_glossary_input],
+            outputs=[api_submit_correct_output], api_name="submit_srt_correct_with_glossary")
+
     with gr.Tabs():
         # --- TAB 1: TRANSCRIPTION ---
         with gr.Tab("🎬 Transcription"):
@@ -3660,7 +3913,7 @@ with gr.Blocks(
                         value="*Transcription will appear here...*",
                         elem_id="recognized-text"
                     )
-                    
+
                     with gr.Group():
                         output_srt = gr.TextArea(
                             label="SRT Subtitles",
@@ -3674,6 +3927,24 @@ with gr.Blocks(
                             elem_classes=["download-file"]
                         )
             
+            with gr.Accordion('Audio review queue', open=False):
+                review_summary = gr.Markdown('Process media to create a review queue')
+                review_item_selector = gr.Dropdown(choices=[], label='Passage to review')
+                review_audio_output = gr.Audio(label='Original audio with surrounding context', interactive=False)
+                review_detail_output = gr.HTML()
+                review_decision_input = gr.Radio(choices=[('Unresolved', 'unresolved'), ('Keep original', 'keep_original'),
+                                                          ('Needs editing', 'needs_edit')], value='unresolved', label='Your decision')
+                review_decision_button = gr.Button('Record decision')
+                review_json_download = gr.File(label='Review data')
+                review_bundle_download = gr.File(label='Review report with audio')
+            session_state.change(fn=review_panel_outputs, inputs=[session_state],
+                outputs=[review_summary, review_item_selector, review_audio_output, review_detail_output,
+                         review_json_download, review_bundle_download], api_visibility='private')
+            review_item_selector.change(fn=preview_review_item, inputs=[review_item_selector, session_state],
+                outputs=[review_audio_output, review_detail_output], api_visibility='private')
+            review_decision_button.click(fn=record_review_decision,
+                inputs=[review_item_selector, review_decision_input, session_state], outputs=[session_state], api_visibility='private')
+
             # Update preview based on file type
             def update_preview(file_path):
                 if not file_path:
@@ -3820,7 +4091,7 @@ with gr.Blocks(
                     diff_view = gr.HTML()
             
             # Function to run correction and show results
-            def run_correction_and_show(api_key, model_name, custom_model, base_url, state, source_choice, uploaded_srt):
+            def run_correction_and_show(api_key, model_name, custom_model, base_url, state, source_choice, uploaded_srt, glossary_id=None):
                 stream_srt = state.get("original_srt", "") if state else ""
                 stream_base_name = state.get("original_filename", "subtitles") if state else "subtitles"
 
@@ -3831,6 +4102,10 @@ with gr.Blocks(
                     upload_srt_file=uploaded_srt,
                     stream_error_message="No transcription SRT found. Process a media file first or upload SRT file(s)."
                 )
+                if source_choice == "Use output from previous step":
+                    original_srt = recognition_correction_source(
+                        original_srt, (state or {}).get("recognition_evidence") or {}
+                    )
 
                 original, corrected, traditional, diff_html, orig_path, corr_path, trad_path, status_msg = run_llm_correction_for_content(
                     original_srt=original_srt,
@@ -3839,6 +4114,7 @@ with gr.Blocks(
                     model_name=model_name,
                     custom_model=custom_model,
                     base_url=base_url,
+                    **({"glossary_id": glossary_id} if glossary_id is not None else {}),
                 )
                 latest_source = prepare_latest_traditional_source(traditional)
                 latest_video_duration_ms = None
@@ -3880,12 +4156,14 @@ with gr.Blocks(
                 uploaded_srt,
                 expected_chapter_revision=None,
                 request: gr.Request = None,
+                glossary_id=None,
             ):
                 """Wrapper that catches errors and returns them along with a flag."""
                 safe_state = update_latest_traditional_source(state)
                 try:
                     result = run_correction_and_show(
-                        api_key, model_name, custom_model, base_url, safe_state, source_choice, uploaded_srt
+                        api_key, model_name, custom_model, base_url, safe_state, source_choice, uploaded_srt,
+                        **({"glossary_id": glossary_id} if glossary_id is not None else {}),
                     )
                     if not chapter_revision_is_current(expected_chapter_revision, request):
                         return _unchanged_outputs(9)
@@ -3930,6 +4208,7 @@ with gr.Blocks(
                 uploaded_srt,
                 expected_chapter_revision,
                 request: gr.Request = None,
+                glossary_id=None,
             ):
                 outputs = safe_correction_wrapper(
                     api_key,
@@ -3941,6 +4220,7 @@ with gr.Blocks(
                     uploaded_srt,
                     expected_chapter_revision,
                     request,
+                    **({"glossary_id": glossary_id} if glossary_id is not None else {}),
                 )
                 return make_revisioned_output_candidate(
                     outputs,
@@ -4196,6 +4476,7 @@ with gr.Blocks(
                     srt_custom_model_input,
                     srt_base_url_input,
                     chapter_revision_state,
+                    glossary_selector,
                 ],
                 outputs=[english_candidate_state],
                 api_visibility="private",
@@ -4229,6 +4510,7 @@ with gr.Blocks(
                 model_name,
                 custom_model,
                 base_url,
+                glossary_id=None,
             ):
                 correction_files = resolve_translator_correction_files(
                     source_choice=source_choice,
@@ -4250,6 +4532,7 @@ with gr.Blocks(
                     model_name=model_name,
                     custom_model=custom_model,
                     base_url=base_url,
+                    **({"glossary_id": glossary_id} if glossary_id is not None else {}),
                 )
                 updated_session_state = update_latest_traditional_source(
                     shared_session_state,
@@ -4278,6 +4561,7 @@ with gr.Blocks(
                 base_url,
                 expected_chapter_revision=None,
                 request: gr.Request = None,
+                glossary_id=None,
             ):
                 safe_shared_session_state = update_latest_traditional_source(
                     shared_session_state
@@ -4292,6 +4576,7 @@ with gr.Blocks(
                         model_name,
                         custom_model,
                         base_url,
+                        **({"glossary_id": glossary_id} if glossary_id is not None else {}),
                     )
                     if not chapter_revision_is_current(expected_chapter_revision, request):
                         return _unchanged_outputs(8)
@@ -4335,6 +4620,7 @@ with gr.Blocks(
                 base_url,
                 expected_chapter_revision,
                 request: gr.Request = None,
+                glossary_id=None,
             ):
                 outputs = safe_translator_correction_wrapper(
                     source_choice,
@@ -4347,6 +4633,7 @@ with gr.Blocks(
                     base_url,
                     expected_chapter_revision,
                     request,
+                    **({"glossary_id": glossary_id} if glossary_id is not None else {}),
                 )
                 return make_revisioned_output_candidate(
                     outputs,
@@ -4562,7 +4849,8 @@ with gr.Blocks(
             )
             process_stage_event = process_reset_event.then(
                 fn=stage_process_media_outputs,
-                inputs=[input_file, session_state, chapter_revision_state],
+                inputs=[input_file, session_state, chapter_revision_state, glossary_selector,
+                        glossary_mode_selector, review_context_selector],
                 outputs=[process_candidate_state],
                 api_visibility="private",
             )
@@ -4606,6 +4894,7 @@ with gr.Blocks(
                     transcription_correction_source,
                     transcription_correction_upload,
                     chapter_revision_state,
+                    glossary_selector,
                 ],
                 outputs=[correction_candidate_state],
                 api_visibility="private",
@@ -4711,6 +5000,7 @@ with gr.Blocks(
                     translator_corr_custom_model_input,
                     translator_corr_base_url_input,
                     chapter_revision_state,
+                    glossary_selector,
                 ],
                 outputs=[translator_correction_candidate_state],
                 api_visibility="private",
@@ -4823,6 +5113,9 @@ with gr.Blocks(
                 )
 
             for producer_setting in (
+                glossary_selector,
+                glossary_mode_selector,
+                review_context_selector,
                 api_key_input,
                 model_dropdown,
                 custom_model_input,
