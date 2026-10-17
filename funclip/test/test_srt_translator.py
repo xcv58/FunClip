@@ -32,6 +32,41 @@ def model_response(translations):
 
 class SRTTranslatorTests(unittest.TestCase):
     @patch("funclip.llm.srt_translator.completion")
+    def test_price_shift_is_repaired_without_retiming_or_partial_output(self, completion):
+        source = "300\n00:13:14,490 --> 00:13:16,163\n谢谢谢谢\n\n301\n00:13:27,742 --> 00:13:30,770\n最后五道菜的价格是2910\n"
+        moved = [{"cue_id": 300, "text": "The five dishes cost 2910"}, {"cue_id": 301, "text": "Our first seafood meal"}]
+        corrected = [{"cue_id": 300, "text": "Thank you"}, {"cue_id": 301, "text": "Five dishes cost 2910 Taiwan dollars"}]
+        completion.side_effect = [model_response(moved), model_response(corrected)]
+        output = srt_translator.translate_srt_to_english(source)
+        self.assertEqual(completion.call_count, 2)
+        cues = srt_translator.parse_translation_srt(output)
+        self.assertEqual([c.index for c in cues], [300, 301])
+        self.assertNotIn("2910", cues[0].text)
+        self.assertIn("2910", cues[1].text)
+        self.assertEqual(cues[1].start_ms, 807742)
+        self.assertIn("numeric_fact_added_or_moved", completion.call_args.kwargs["messages"][-1]["content"])
+
+    @patch("funclip.llm.srt_translator.completion")
+    def test_persistent_numeric_change_fails_after_the_bounded_retry(self, completion):
+        source = "1\n00:00:00,000 --> 00:00:02,000\n35米\n"
+        completion.return_value = model_response([{"cue_id": 1, "text": "350 meters"}])
+        with self.assertRaisesRegex(srt_translator.SRTTranslationError, "numeric_fact_missing_or_changed"):
+            srt_translator.translate_srt_to_english(source)
+        self.assertEqual(completion.call_count, 2)
+
+    @patch("funclip.llm.srt_translator.completion")
+    def test_ambiguous_apostrophe_is_repaired_with_full_words(self, completion):
+        source = "1\n00:00:00,000 --> 00:00:02,000\n准备好了\n"
+        completion.side_effect = [
+            model_response([{"cue_id": 1, "text": "It's ready"}]),
+            model_response([{"cue_id": 1, "text": "It is ready"}]),
+        ]
+        output = srt_translator.translate_srt_to_english(source)
+        self.assertEqual(output, source.replace("准备好了", "It is ready").rstrip("\n"))
+        self.assertEqual(completion.call_count, 2)
+        self.assertIn("Use full words", completion.call_args.kwargs["messages"][-1]["content"])
+
+    @patch("funclip.llm.srt_translator.completion")
     def test_translation_rebuilds_original_indices_and_timestamps(self, completion):
         completion.return_value = model_response(
             [

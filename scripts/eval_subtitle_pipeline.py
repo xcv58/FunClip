@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Replay local first-delivery cases without providers, ASR, or source writes."""
+"""Replay local pipeline reference cases without providers, ASR, or source writes."""
 
 import argparse
 from collections import Counter
@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT))
 
 from funclip.llm.chinese_converter import convert_srt_to_traditional
 from funclip.subtitle_quality import build_srt_quality_report
+from funclip.subtitle_meaning import check_meaning_preservation, MeaningPreservationError
 
 
 def _select_cues(source, ids):
@@ -51,6 +52,11 @@ def evaluate(manifest, references_root=None):
         if expected_source in source_bytes:
             if _select_cues(source_bytes[expected_source], case["source_cue_ids"]) != case["expected_srt"]:
                 raise ValueError(f"Expected excerpt does not match reference: {case['id']}")
+        for binding in case.get("reference_bindings", []):
+            if binding["source_id"] in source_bytes:
+                excerpt = _select_cues(source_bytes[binding["source_id"]], binding["cue_ids"])
+                if excerpt != case[binding["srt_field"]]:
+                    raise ValueError(f"Meaning excerpt does not match reference: {case['id']}")
         result = {"id": case["id"], "kind": case["kind"]}
         if case["kind"] == "quality":
             report = build_srt_quality_report(case["input_srt"])
@@ -60,6 +66,16 @@ def evaluate(manifest, references_root=None):
             converted = convert_srt_to_traditional(case["input_srt"])
             result.update(status="passed" if converted == case["expected_srt"] else "failed",
                           expected_srt=case["expected_srt"], actual_srt=converted)
+        elif case["kind"] == "meaning":
+            issues = []
+            try:
+                check_meaning_preservation(case["source_cues"], case["candidate_cues"], mode=case["mode"])
+            except MeaningPreservationError as exc:
+                issues = exc.issues
+            expected = set(case["expected_issue_codes"])
+            actual = {issue["code"] for issue in issues}
+            result.update(status="passed" if actual == expected else "failed",
+                          expected_issue_codes=sorted(expected), actual_issues=issues)
         elif case["kind"] in {"deferred-semantic", "unresolved"}:
             result["status"] = "catalogued_not_scored"
         else:

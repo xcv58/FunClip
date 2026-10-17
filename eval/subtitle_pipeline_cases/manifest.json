@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "scope": "FunClip first delivery: advisory quality reports and contextual Traditional conversion",
+  "scope": "FunClip quality diagnostics, contextual Traditional conversion and supported meaning-preservation guards",
   "source_policy": "Read-only source archive; final SRTs are references, not word-aligned acoustic truth",
   "sources": {
     "seafood.final.zh-Hans": {
@@ -298,19 +298,97 @@
     },
     {
       "id": "S06-semantic-anchor",
-      "kind": "deferred-semantic",
+      "kind": "meaning",
       "reference_srt": "300\n00:13:14,490 --> 00:13:16,163\nThank you, thank you.\n\n301\n00:13:27,742 --> 00:13:30,770\nThe five dishes cost NT$2,910.\n",
       "historical_candidate_srt": "300\n00:13:14,490 --> 00:13:16,163\nThe final five dishes cost 2910.\n\n301\n00:13:27,742 --> 00:13:30,770\nIt's our first seafood meal in Penghu.\n",
-      "expectation": "Future semantic check should detect price moved to the thank-you cue",
-      "score": false
+      "expectation": "Guard detects price moved to the thank-you cue",
+      "score": true,
+      "mode": "translation",
+      "source_cues": [
+        [
+          300,
+          "Thank you, thank you."
+        ],
+        [
+          301,
+          "The five dishes cost NT$2,910."
+        ]
+      ],
+      "candidate_cues": [
+        [
+          300,
+          "The final five dishes cost 2910."
+        ],
+        [
+          301,
+          "It's our first seafood meal in Penghu."
+        ]
+      ],
+      "expected_issue_codes": [
+        "numeric_fact_missing_or_changed",
+        "numeric_fact_added_or_moved"
+      ],
+      "reference_bindings": [
+        {
+          "source_id": "seafood.final.en",
+          "cue_ids": [
+            300,
+            301
+          ],
+          "srt_field": "reference_srt"
+        },
+        {
+          "source_id": "seafood.generated.en",
+          "cue_ids": [
+            300,
+            301
+          ],
+          "srt_field": "historical_candidate_srt"
+        }
+      ]
     },
     {
       "id": "G03-comparison-loss",
-      "kind": "deferred-semantic",
+      "kind": "meaning",
       "reference_srt": "354\n00:17:41,490 --> 00:17:44,410\n据估计，这些技术让冷却能耗\n\n355\n00:17:44,410 --> 00:17:48,230\n比采用传统的冷却技术的建筑\n\n356\n00:17:48,230 --> 00:17:50,416\n低约30%。\n",
       "historical_candidate_srt": "283\n00:17:41,490 --> 00:17:45,590\n据估计，这些技术让冷却能耗\n降低约30%。\n",
-      "expectation": "Future semantic check should detect a lost comparison target",
-      "score": false
+      "expectation": "Guard detects a lost comparison target",
+      "score": true,
+      "mode": "correction",
+      "source_cues": [
+        [
+          354,
+          "据估计，这些技术让冷却能耗 比采用传统的冷却技术的建筑 低约30%。"
+        ]
+      ],
+      "candidate_cues": [
+        [
+          354,
+          "据估计，这些技术让冷却能耗\n降低约30%。"
+        ]
+      ],
+      "expected_issue_codes": [
+        "comparison_target_changed"
+      ],
+      "alignment_note": "Historical structures differ. This case compares the full selected clause as one text unit; API structure checks are separate.",
+      "reference_bindings": [
+        {
+          "source_id": "gardens.final.zh-Hans",
+          "cue_ids": [
+            354,
+            355,
+            356
+          ],
+          "srt_field": "reference_srt"
+        },
+        {
+          "source_id": "gardens.repair",
+          "cue_ids": [
+            283
+          ],
+          "srt_field": "historical_candidate_srt"
+        }
+      ]
     },
     {
       "id": "S04-negation",
@@ -349,11 +427,284 @@
       "input_srt": "149\n00:16:26,773 --> 00:16:29,925\n是不是给自己一个热情的掌声\n\n150\n00:16:30,150 --> 00:16:32,939\n谢谢现场所有的贵宾\n\n151\n00:16:32,939 --> 00:16:34,790\n以及我们的朋友们\n",
       "question": "Broadcast was missed by independent ASR",
       "score": false
+    },
+    {
+      "id": "meaning-negation-removed",
+      "kind": "meaning",
+      "mode": "correction",
+      "source_cues": [
+        [
+          1,
+          "那不能进港"
+        ]
+      ],
+      "candidate_cues": [
+        [
+          1,
+          "那能进港"
+        ]
+      ],
+      "expected_issue_codes": [
+        "negation_changed"
+      ],
+      "meaning": "Synthetic safeguard control; not an edit to reference subtitles",
+      "synthetic": true
+    },
+    {
+      "id": "meaning-negation-added",
+      "kind": "meaning",
+      "mode": "correction",
+      "source_cues": [
+        [
+          1,
+          "那能进港"
+        ]
+      ],
+      "candidate_cues": [
+        [
+          1,
+          "那不能进港"
+        ]
+      ],
+      "expected_issue_codes": [
+        "negation_changed"
+      ],
+      "meaning": "Synthetic safeguard control; not an edit to reference subtitles",
+      "synthetic": true
+    },
+    {
+      "id": "meaning-amount-changed",
+      "kind": "meaning",
+      "mode": "correction",
+      "source_cues": [
+        [
+          1,
+          "价格2910元"
+        ]
+      ],
+      "candidate_cues": [
+        [
+          1,
+          "价格291元"
+        ]
+      ],
+      "expected_issue_codes": [
+        "numeric_fact_missing_or_changed",
+        "numeric_fact_added_or_moved"
+      ],
+      "meaning": "Synthetic safeguard control; not an edit to reference subtitles",
+      "synthetic": true
+    },
+    {
+      "id": "meaning-percent-unit-lost",
+      "kind": "meaning",
+      "mode": "translation",
+      "source_cues": [
+        [
+          1,
+          "低30%"
+        ]
+      ],
+      "candidate_cues": [
+        [
+          1,
+          "30 lower"
+        ]
+      ],
+      "expected_issue_codes": [
+        "numeric_fact_missing_or_changed",
+        "numeric_fact_added_or_moved"
+      ],
+      "meaning": "Synthetic safeguard control; not an edit to reference subtitles",
+      "synthetic": true
+    },
+    {
+      "id": "meaning-approximation-lost",
+      "kind": "meaning",
+      "mode": "correction",
+      "source_cues": [
+        [
+          1,
+          "约30%"
+        ]
+      ],
+      "candidate_cues": [
+        [
+          1,
+          "30%"
+        ]
+      ],
+      "expected_issue_codes": [
+        "approximation_changed"
+      ],
+      "meaning": "Synthetic safeguard control; not an edit to reference subtitles",
+      "synthetic": true
+    },
+    {
+      "id": "meaning-comparison-reversed",
+      "kind": "meaning",
+      "mode": "correction",
+      "source_cues": [
+        [
+          1,
+          "比传统建筑低约30%"
+        ]
+      ],
+      "candidate_cues": [
+        [
+          1,
+          "比传统建筑高约30%"
+        ]
+      ],
+      "expected_issue_codes": [
+        "comparison_target_changed"
+      ],
+      "meaning": "Synthetic safeguard control; not an edit to reference subtitles",
+      "synthetic": true
+    },
+    {
+      "id": "meaning-numeric-equivalent",
+      "kind": "meaning",
+      "mode": "correction",
+      "source_cues": [
+        [
+          1,
+          "高约三十五米"
+        ]
+      ],
+      "candidate_cues": [
+        [
+          1,
+          "高约35米"
+        ]
+      ],
+      "expected_issue_codes": [],
+      "meaning": "Synthetic safeguard control; not an edit to reference subtitles",
+      "synthetic": true
+    },
+    {
+      "id": "meaning-translation-correct-price",
+      "kind": "meaning",
+      "mode": "translation",
+      "source_cues": [
+        [
+          1,
+          "最后五道菜的价格是2910"
+        ]
+      ],
+      "candidate_cues": [
+        [
+          1,
+          "Five dishes cost 2910 Taiwan dollars"
+        ]
+      ],
+      "expected_issue_codes": [],
+      "meaning": "Synthetic safeguard control; not an edit to reference subtitles",
+      "synthetic": true
+    },
+    {
+      "id": "meaning-natural-range",
+      "kind": "meaning",
+      "mode": "translation",
+      "source_cues": [
+        [
+          1,
+          "四五个小时"
+        ]
+      ],
+      "candidate_cues": [
+        [
+          1,
+          "Four to five hours"
+        ]
+      ],
+      "expected_issue_codes": [],
+      "meaning": "Synthetic safeguard control; not an edit to reference subtitles",
+      "synthetic": true
+    },
+    {
+      "id": "meaning-natural-first",
+      "kind": "meaning",
+      "mode": "translation",
+      "source_cues": [
+        [
+          1,
+          "先进去看看"
+        ]
+      ],
+      "candidate_cues": [
+        [
+          1,
+          "Let us look inside first"
+        ]
+      ],
+      "expected_issue_codes": [],
+      "meaning": "Synthetic safeguard control; not an edit to reference subtitles",
+      "synthetic": true
+    },
+    {
+      "id": "meaning-countdown-equivalent",
+      "kind": "meaning",
+      "mode": "translation",
+      "source_cues": [
+        [
+          1,
+          "五、四、三、二、一"
+        ]
+      ],
+      "candidate_cues": [
+        [
+          1,
+          "Five four three two one"
+        ]
+      ],
+      "expected_issue_codes": [],
+      "synthetic": true
+    },
+    {
+      "id": "meaning-countdown-digit-missing",
+      "kind": "meaning",
+      "mode": "translation",
+      "source_cues": [
+        [
+          1,
+          "五、四、三、二、一"
+        ]
+      ],
+      "candidate_cues": [
+        [
+          1,
+          "Five four three two"
+        ]
+      ],
+      "expected_issue_codes": [
+        "numeric_fact_missing_or_changed"
+      ],
+      "synthetic": true
+    },
+    {
+      "id": "meaning-comparison-grammar-control",
+      "kind": "meaning",
+      "mode": "correction",
+      "source_cues": [
+        [
+          1,
+          "比白天感觉凉爽的很多"
+        ]
+      ],
+      "candidate_cues": [
+        [
+          1,
+          "比白天感觉凉爽得很多"
+        ]
+      ],
+      "expected_issue_codes": [],
+      "synthetic": true,
+      "meaning": "Regression control from the real pilot; a grammar particle correction preserves comparison meaning"
     }
   ],
   "deferred": [
-    "Semantic preservation guards",
-    "Translation fact-to-cue checks",
+    "General semantic/word alignment and acoustic verification",
     "Glossary and ASR changes"
   ]
 }

@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from litellm import completion
 from funclip.llm.model_config import DEFAULT_LLM_MODEL, completion_options
 from funclip.subtitle_style import SUBTITLE_STYLE, SubtitleFormattingError, format_subtitle_text
+from funclip.subtitle_meaning import check_meaning_preservation, meaning_guard_scope, MeaningPreservationError
 
 load_dotenv()
 
@@ -182,6 +183,13 @@ def _validated_response(response, batch):
             raise SRTCorrectionError("Correction IDs were duplicated, reordered or changed.")
         _validate_text(item["text"], len(cue.text.split("\n")))
         texts.append(item["text"])
+    try:
+        check_meaning_preservation(
+            [(cue.cue_id, cue.text) for cue in batch],
+            [(cue.cue_id, text) for cue, text in zip(batch, texts)], mode="correction",
+        )
+    except MeaningPreservationError as exc:
+        raise SRTCorrectionError(str(exc)) from exc
     # Validate the entire model batch before applying the local display policy.
     formatted = []
     for cue, text in zip(batch, texts):
@@ -293,6 +301,7 @@ def request_srt_correction(srt_content, api_key=None, base_url=None, model=DEFAU
         corrected = corrected.replace("\n", "\r\n")
     validation = correction_structure_report(srt_content, corrected)
     validation["subtitle_style"] = SUBTITLE_STYLE
+    validation["meaning_preservation"] = meaning_guard_scope("correction")
     return {"corrected_content": corrected, "requested_model": model,
             "resolved_model": attempts[-1]["resolved_model"], "usage": total_usage,
             "messages": all_messages[0], "batch_messages": all_messages,

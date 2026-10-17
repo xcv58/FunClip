@@ -65,6 +65,7 @@ try:
     from funclip.service_contract import no_speech_result, speech_result, recognition_evidence
     from funclip.subtitle_style import SUBTITLE_STYLE, SubtitleFormattingError
     from funclip.subtitle_quality import build_srt_quality_report, quality_status_suffix
+    from funclip.subtitle_meaning import meaning_guard_scope
 except ImportError as e:
     print(f"Error importing modules: {e}")
     sys.exit(1)
@@ -3096,6 +3097,7 @@ def api_srt_correct(srt_content, api_key, model_name, custom_model, base_url, re
         "original_srt": original,
         "corrected_srt": corrected,
         "correction_validation": correction_structure_report(original, corrected),
+        "meaning_preservation": meaning_guard_scope("correction"),
         "quality_report": build_srt_quality_report(corrected),
         "subtitle_style": SUBTITLE_STYLE,
         "diff_html": diff_html,
@@ -3170,6 +3172,7 @@ def api_translate_srt_english(srt_files, api_key, model_name, custom_model, base
         "download_path": download_path,
         "status": "✅ English translation completed and SRT structure validated." + quality_status_suffix([item["report"] for item in state.get("quality_reports", [])]),
         "quality_reports": state.get("quality_reports", []),
+        "meaning_preservation": meaning_guard_scope("translation"),
     }
 
 

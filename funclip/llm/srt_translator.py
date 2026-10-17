@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from litellm import completion
 from funclip.llm.model_config import DEFAULT_LLM_MODEL, completion_options
 from funclip.subtitle_style import SubtitleFormattingError, format_subtitle_text
+from funclip.subtitle_meaning import check_meaning_preservation, MeaningPreservationError
 
 
 load_dotenv()
@@ -42,7 +43,15 @@ TRANSLATION_LLM_MAX_RETRIES = max(
 TRANSLATION_VALIDATION_RETRIES = max(
     0, min(2, int(os.getenv("FUNCLIP_TRANSLATION_VALIDATION_RETRIES", "1")))
 )
-TRANSLATION_PROMPT_REVISION = "cue-preserving-soft-reading-target-2026-08-30"
+TRANSLATION_PROMPT_REVISION = "cue-preserving-full-word-style-2026-10-17"
+_TRANSLATION_TEXT_STYLE = (
+    "Subtitle text must be punctuation free with ordinary spaces as separators. "
+    "Use full words instead of contractions or possessive apostrophes. For example use "
+    "it is or it has as appropriate, that is, and a natural of phrase for a possessive. "
+    "Preserve negation, names, numbers and units; express meaningful numeric punctuation "
+    "in words when needed instead of deleting it. This style applies to text values only, "
+    "not the required JSON syntax. "
+)
 
 
 _TIMESTAMP_RE = re.compile(
@@ -238,7 +247,7 @@ def _system_prompt() -> str:
         "for its target_characters value, including spaces and punctuation, but preserve the cue's "
         "meaning when natural English needs more room. Never omit meaning merely to hit the target. "
         "Use at most two lines and at most 42 characters per line; insert a newline only at a "
-        "natural phrase boundary. Prefer "
+        "natural phrase boundary. " + _TRANSLATION_TEXT_STYLE + "Prefer "
         "natural spoken U.S. English over literal wording. Preserve tone and intentional foreign "
         "terms. Use these fixed names when applicable: Penghu International Fireworks Festival; "
         "Guanyinting Recreation Area (or Guanyinting when the source is informal); Dragon Ball Z; "
@@ -378,13 +387,22 @@ def parse_translation_response(content: object, cues: list[SRTCue]) -> dict[int,
                 f"Translation candidate {position} has an invalid cue_id."
             )
         actual_ids.append(cue_id)
-        result[cue.index] = _normalize_translation_text(cue, candidate["text"])
+        if not isinstance(candidate["text"], str):
+            raise SRTTranslationError(f"Translation for cue {cue.index} is not text.")
+        result[cue.index] = candidate["text"]
     expected_ids = [cue.index for cue in cues]
     if actual_ids != expected_ids:
         raise SRTTranslationError(
             f"The model returned cue IDs {actual_ids}; expected {expected_ids}."
         )
-    return result
+    try:
+        check_meaning_preservation(
+            [(cue.index, cue.text) for cue in cues],
+            [(cue.index, result[cue.index]) for cue in cues], mode="translation",
+        )
+    except MeaningPreservationError as exc:
+        raise SRTTranslationError(str(exc)) from exc
+    return {cue.index: _normalize_translation_text(cue, result[cue.index]) for cue in cues}
 
 
 def _repair_prompt(validation_error: SRTTranslationError) -> str:
@@ -393,7 +411,7 @@ def _repair_prompt(validation_error: SRTTranslationError) -> str:
         f"{validation_error} Generate a completely new JSON response from the original cues. "
         "Return every requested cue_id exactly once, preserve each cue's meaning, and obey the "
         "two-line structural limit. Treat target_characters as a concision goal, not a reason to "
-        "omit meaning."
+        "omit meaning. " + _TRANSLATION_TEXT_STYLE
     )
 
 

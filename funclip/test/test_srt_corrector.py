@@ -26,6 +26,25 @@ def response(texts=TEXTS, ids=(1, 7), *, finish="stop", refusal=None, content=No
 
 class SRTCorrectionTests(unittest.TestCase):
     @patch.object(corrector, "completion")
+    def test_meaning_failure_is_repaired_once_before_publication(self, completion):
+        source = "1\n00:00:00,000 --> 00:00:02,000\n那不能进港\n"
+        completion.side_effect = [response(["那能进港"], (1,)), response(["那不能进港"], (1,))]
+        result = corrector.request_srt_correction(source)
+        self.assertEqual(result["corrected_content"], source)
+        self.assertEqual(completion.call_count, 2)
+        self.assertFalse(result["attempts"][0]["validated"])
+        self.assertIn("negation_changed", result["attempts"][0]["error"])
+        self.assertFalse(result["validation"]["meaning_preservation"]["content_verified"])
+
+    @patch.object(corrector, "completion")
+    def test_repeated_semantic_failure_produces_no_complete_output(self, completion):
+        source = "1\n00:00:00,000 --> 00:00:02,000\n比传统建筑低约30%\n"
+        completion.return_value = response(["降低约30%"], (1,))
+        with self.assertRaisesRegex(corrector.SRTCorrectionError, "no corrected SRT.*comparison_target_changed"):
+            corrector.request_srt_correction(source)
+        self.assertEqual(completion.call_count, 2)
+
+    @patch.object(corrector, "completion")
     def test_only_text_changes_with_exact_headers_and_multiline_layout(self, completion):
         completion.return_value = response()
         result = corrector.request_srt_correction(SOURCE)

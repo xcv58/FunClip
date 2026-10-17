@@ -19,6 +19,19 @@ CORRECTED = SOURCE.replace("天汽", "天气")
 
 
 class GradioSafeCorrectionTests(unittest.TestCase):
+    def test_semantic_failure_is_visible_and_creates_no_download_artifact(self):
+        source = "1\n00:00:00,000 --> 00:00:02,000\n那不能进港\n"
+        response = SimpleNamespace(choices=[SimpleNamespace(finish_reason="stop", message=SimpleNamespace(
+            content=json.dumps({"corrections": [{"cue_id": 1, "text": "那能进港"}]}), refusal=None))],
+            usage=None, model="test", id="test")
+        with patch.object(gradio_app, "resolve_llm_config", return_value=("key", None, "test")), \
+             patch.object(srt_corrector, "completion", return_value=response) as complete, \
+             patch.object(gradio_app, "create_unique_srt_path") as create_file:
+            with self.assertRaisesRegex(Exception, "Meaning preservation requires review"):
+                gradio_app.api_srt_correct(source, "key", "test", "", "", False)
+            self.assertEqual(complete.call_count, 2)
+            create_file.assert_not_called()
+
     def test_ui_and_api_defaults_route_luna_through_the_server_key_policy(self):
         for component in (gradio_app.model_dropdown, gradio_app.srt_model_dropdown,
                           gradio_app.translator_corr_model_dropdown, gradio_app.chapter_model_dropdown,
