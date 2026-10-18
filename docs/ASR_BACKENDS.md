@@ -57,18 +57,34 @@ export FUNCLIP_QWEN_ALIGNER=/path/to/Qwen3-ForcedAligner-0.6B
 funclip-env/bin/python gradio_app.py
 ```
 
-This machine's existing benchmark environment can be reused without installation:
+This machine uses a self-contained internal runtime bundle:
 
-```sh
-export FUNCLIP_QWEN_PYTHON="/Volumes/Crucial X10/FunClip-model-benchmarks/2026-10-17/env/bin/python"
-export FUNCLIP_QWEN_MODEL="/Volumes/Crucial X10/FunClip-model-benchmarks/2026-10-17/models/qwen"
-export FUNCLIP_QWEN_ALIGNER="/Volumes/Crucial X10/FunClip-model-benchmarks/2026-10-17/models/aligner"
+```text
+~/.local/share/FunClip/qwen3-asr-1.7b/
+  bin/python       launcher with bundle-local caches and offline settings
+  python/          private Python 3.12 interpreter and standard library
+  env/             validated Python packages
+  models/qwen/     Qwen3-ASR-1.7B checkpoint
+  models/aligner/  Qwen3-ForcedAligner-0.6B checkpoint
 ```
 
-The drive must remain mounted. Missing paths cause an actionable setup error;
-there is no silent fallback. Launch agents must receive these variables explicitly
-when this backend is enabled for the hosted service. Source edits do not restart
-an already running service.
+```sh
+export FUNCLIP_QWEN_PYTHON="$HOME/.local/share/FunClip/qwen3-asr-1.7b/bin/python"
+export FUNCLIP_QWEN_MODEL="$HOME/.local/share/FunClip/qwen3-asr-1.7b/models/qwen"
+export FUNCLIP_QWEN_ALIGNER="$HOME/.local/share/FunClip/qwen3-asr-1.7b/models/aligner"
+```
+
+The bundle includes its own interpreter rather than linking to Codex's shared
+Python runtime. It does not require the external benchmark drive. The launcher
+keeps model and library caches inside the bundle and enables offline loading.
+The FunClip application and macOS system frameworks remain host requirements.
+`SHA256SUMS.json` and `BUNDLE.json` retain migration integrity evidence. Existing
+external benchmark copies remain available as rollback data.
+
+Missing paths cause an actionable setup error; there is no silent fallback.
+Launch agents must receive these variables explicitly when this backend is
+enabled for the hosted service. Source edits do not restart an already running
+service. Paraformer remains the default backend.
 
 ## Recognition and timing contract
 
