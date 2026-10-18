@@ -1,0 +1,5 @@
+# Separate Python 3.12 environment on Apple Silicon only.
+# Do not install into funclip-env; Transformers versions conflict.
+mlx-qwen3-asr==0.4.4
+mlx==0.32.4
+mlx-metal==0.32.4

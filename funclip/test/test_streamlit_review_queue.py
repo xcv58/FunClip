@@ -14,6 +14,7 @@ from funclip.test.test_review_queue import fixture
 from funclip.review_queue import build_review_queue
 from funclip.utils.subtitle_utils import generate_srt
 from funclip import videoclipper
+from funclip.asr_backends import QWEN_BACKEND
 
 
 class StreamlitReviewQueueTests(unittest.TestCase):
@@ -36,12 +37,15 @@ class StreamlitReviewQueueTests(unittest.TestCase):
              patch('librosa.load', return_value=(wave, 16000)):
             clipper.return_value.recog.return_value = (selected['text'], rendered, state)
             app = AppTest.from_file(str(Path(__file__).resolve().parents[2] / 'app.py')).run()
+            self.assertEqual(next(s for s in app.selectbox if s.label == 'Speech recognition model').value, 'paraformer')
+            next(s for s in app.selectbox if s.label == 'Speech recognition model').set_value(QWEN_BACKEND)
             self.assertEqual(next(s for s in app.selectbox if s.label == 'Glossary use').value, 'reference')
             next(s for s in app.selectbox if s.label == 'Episode glossary').set_value('penghu-food')
             next(s for s in app.selectbox if s.label == 'Glossary use').set_value('hints')
             next(s for s in app.checkbox if s.label == 'Compare risky passages with another audio window').check()
             next(b for b in app.button if b.label == 'Start Processing').click().run()
             self.assertEqual(list(app.exception), [])
+            self.assertEqual(clipper.call_args.args[0].backend_id, QWEN_BACKEND)
             options = clipper.return_value.recog.call_args.kwargs
             self.assertEqual(options['glossary'].id, 'penghu-food')
             self.assertEqual(options['glossary_mode'], 'hints')

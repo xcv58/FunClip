@@ -7,7 +7,7 @@ or pauses instead of reconstructing text from punctuation-free tokens.
 
 import re
 
-from .subtitle_alignment import aligned_tokens as _aligned_tokens
+from .subtitle_alignment import aligned_units, TOKEN
 from funclip.numeric_spans import numeric_breaks
 
 
@@ -67,11 +67,11 @@ def split_long_chinese_sentence(sentence):
     if not isinstance(text, str) or not _CHINESE.search(text):
         return [sentence]
     timestamps = sentence.get("timestamp")
-    tokens = _aligned_tokens(text, timestamps)
+    tokens = aligned_units(text, timestamps, sentence.get('timestamp_spans'))
     if len(tokens) < 2:
         return [sentence]
     if (
-        len(tokens) <= MAX_SUBTITLE_TOKENS
+        len(TOKEN.findall(text)) <= MAX_SUBTITLE_TOKENS
         and timestamps[-1][1] - timestamps[0][0] <= MAX_SUBTITLE_DURATION_MS
     ):
         return [sentence]
@@ -83,7 +83,7 @@ def split_long_chinese_sentence(sentence):
     while start < len(tokens):
         # A single token may exceed the duration limit; retain its real timing.
         limit = start + 1
-        while limit < len(tokens) and limit - start < MAX_SUBTITLE_TOKENS:
+        while limit < len(tokens) and sum(len(TOKEN.findall(t.group())) for t in tokens[start:limit + 1]) <= MAX_SUBTITLE_TOKENS:
             if timestamps[limit][1] - timestamps[start][0] > MAX_SUBTITLE_DURATION_MS:
                 break
             limit += 1
@@ -108,6 +108,9 @@ def split_long_chinese_sentence(sentence):
             start=timestamps[start][0],
             end=timestamps[end - 1][1],
         )
+        if 'timestamp_spans' in sentence:
+            chunk['timestamp_spans'] = [[t.start() - boundaries[start], t.end() - boundaries[start]]
+                                        for t in tokens[start:end]]
         chunks.append(chunk)
         start = end
     return chunks

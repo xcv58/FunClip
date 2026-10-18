@@ -3,6 +3,7 @@ import os
 import sys
 import time
 import threading
+import json
 from pathlib import Path
 import soundfile as sf
 import streamlit.components.v1 as components
@@ -28,6 +29,8 @@ try:
     from funclip.review_queue import write_review_bundle, decide_review_item, save_review_bundle, REVIEW_LABELS, review_details, review_time
     from funclip.review_queue import create_review_directory, touch_review_artifacts
     from funclip.meaning_alignment import srt_alignment_report
+    from funclip.asr_backends import DEFAULT_ASR_BACKEND, backend_choices, select_backend
+    from funclip.service_contract import recognition_evidence
 except ImportError as e:
     st.error(f"Error importing modules: {e}")
     st.stop()
@@ -68,7 +71,7 @@ def reset_state():
     keys_to_clear = ['res_text', 'res_srt', 'recognition_srt', 'correction_source_srt',
                      'numeric_span_report', 'review_queue', 'review_queue_path', 'review_bundle_path',
                      'recognition_glossary_id', 'srt_filename', 'processing_done', 'res_srt_corrected',
-                     'correction_alignment_report', 'quality_report']
+                     'correction_alignment_report', 'quality_report', 'recognition_evidence', 'asr_backend']
     for key in keys_to_clear:
         if key in st.session_state:
             del st.session_state[key]
@@ -84,6 +87,10 @@ except Exception as e:
     st.error(f"Failed to load models: {e}")
     st.stop()
 
+asr_models = backend_choices()
+asr_backend = st.selectbox('Speech recognition model', options=[v for _, v in asr_models],
+                          format_func=lambda v: dict((value, label) for label, value in asr_models)[v],
+                          help='Qwen is an optional local experimental backend requiring separate setup')
 profiles = glossary_choices()
 glossary_id = st.selectbox('Episode glossary', options=[v for _, v in profiles],
                          format_func=lambda v: dict((value, label) for label, value in profiles)[v])
@@ -135,7 +142,7 @@ if uploaded_file is not None:
                     st.write("Could not determine duration.")
 
                 st.write("Initializing Clipper...")
-                audio_clipper = VideoClipper(funasr_model)
+                audio_clipper = VideoClipper(select_backend(asr_backend, funasr_model))
                 audio_clipper.lang = 'zh'
                 
                 status.update(label="✅ Preparation Complete", state="complete", expanded=False)
@@ -169,6 +176,10 @@ if uploaded_file is not None:
             if task.error:
                 timer_placeholder.error(f"Error: {task.error}")
                 st.error(task.error)
+                failed_state = getattr(task.error, 'recognition_state', None)
+                if failed_state is not None:
+                    st.session_state['recognition_evidence'] = recognition_evidence(
+                        failed_state.get('recognition_text', ''), '', failed_state)
             else:
                 # Save results to Session State so they persist!
                 res_text, res_srt, state = task.result
@@ -176,6 +187,8 @@ if uploaded_file is not None:
                 
                 st.session_state['res_text'] = res_text
                 st.session_state['res_srt'] = res_srt
+                st.session_state['recognition_evidence'] = recognition_evidence(res_text, res_srt, state)
+                st.session_state['asr_backend'] = state.get('asr_backend')
                 st.session_state['recognition_srt'] = state.get('recognition_srt', res_srt)
                 st.session_state['correction_source_srt'] = state.get(
                     'correction_source_srt', state.get('recognition_srt', res_srt)
@@ -200,10 +213,17 @@ if uploaded_file is not None:
                     delta=f"{speed_x:.1f}x Speed"
                 )
 
+    if st.session_state.get('recognition_evidence'):
+        st.download_button('Download recognition evidence',
+            json.dumps(st.session_state['recognition_evidence'], ensure_ascii=False, indent=2),
+            file_name='recognition-evidence.json', mime='application/json')
+
     # --- DISPLAY RESULT (Outside the button block) ---
     # This block runs even after you click download, because it checks session_state
     if st.session_state.get('processing_done'):
         st.divider()
+        if st.session_state.get('asr_backend'):
+            st.caption('Recognized with ' + st.session_state['asr_backend']['id'])
         numeric_report = st.session_state.get('numeric_span_report')
         numeric_status = numeric_span_status_suffix(numeric_report).strip()
         if numeric_status:

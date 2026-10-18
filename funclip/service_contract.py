@@ -45,6 +45,9 @@ def recognition_evidence(text, srt_content, recognition_state):
         evidence["numeric_span_report"] = json_value(state.get("numeric_span_report"))
     if "review_evidence" in state:
         evidence["review_evidence"] = json_value(state['review_evidence'])
+    for key in ('asr_backend', 'backend_native', 'timestamp_adapter'):
+        if key in state:
+            evidence[key] = json_value(state[key])
     # Round-trip creates an independent snapshot and verifies finite JSON values.
     return json.loads(json.dumps(evidence, ensure_ascii=False, allow_nan=False))
 

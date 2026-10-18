@@ -18,15 +18,16 @@ import moviepy.editor as mpy
 from moviepy.video.tools.subtitles import SubtitlesClip, TextClip
 from moviepy.editor import VideoFileClip, concatenate_videoclips
 from moviepy.video.compositing.CompositeVideoClip import CompositeVideoClip
-from utils.subtitle_utils import generate_srt, generate_srt_clip
-from utils.argparse_tools import ArgumentParser, get_commandline_args
-from utils.trans_utils import pre_proc, proc, write_state, load_state, proc_spk, convert_pcm_to_float
+from funclip.utils.subtitle_utils import generate_srt, generate_srt_clip
+from funclip.utils.argparse_tools import ArgumentParser, get_commandline_args
+from funclip.utils.trans_utils import pre_proc, proc, write_state, load_state, proc_spk, convert_pcm_to_float
 from funclip.service_contract import normalized_recognition_payload
 from funclip.subtitle_style import SubtitleFormattingError
 from funclip.glossary import recognition_hotwords, glossary_report, resolve_glossary, validate_glossary_mode
 from funclip.numeric_spans import protect_numeric_sentences
 from funclip.review_queue import recognition_view, context_targets, build_review_queue, include_readability_review
 from funclip.subtitle_quality import build_srt_quality_report
+from funclip.asr_backends import DEFAULT_ASR_BACKEND
 
 
 _RECOGNITION_LOCK = threading.RLock()
@@ -62,7 +63,10 @@ class VideoClipper():
         # FunASR keeps decoder hotwords on the shared model. Serialize inference
         # so two requests cannot exchange glossary context.
         baseline, comparison_error, checks, skipped = None, None, [], []
-        with _RECOGNITION_LOCK, recognition_hotwords(self.funasr_model, profile, hotwords, mode=glossary_mode) as (hints, glossary_evidence):
+        hotword_context = getattr(self.funasr_model, 'recognition_hotwords', None)
+        context = (hotword_context(profile, hotwords, mode=glossary_mode) if callable(hotword_context)
+                   else recognition_hotwords(self.funasr_model, profile, hotwords, mode=glossary_mode))
+        with _RECOGNITION_LOCK, context as (hints, glossary_evidence):
             def recognize(wave, hint, *, primary=False):
                 options = dict(return_spk_res=sd_switch == 'Yes', return_raw_text=True,
                                is_final=True, hotword=hint, pred_timestamp=self.lang == 'en',
@@ -100,6 +104,11 @@ class VideoClipper():
         state['recog_res_raw'] = recognition.get('raw_text', '')
         state['timestamp'] = recognition.get('timestamp', [])
         state['sentences'] = recognition['sentence_info']
+        state['asr_backend'] = recognition.get('asr_backend', {'id': DEFAULT_ASR_BACKEND, 'experimental': False, 'timestamp_unit': 'native token'})
+        for key in ('backend_native', 'timestamp_adapter'):
+            state.pop(key, None)
+            if key in recognition:
+                state[key] = copy.deepcopy(recognition[key])
         res_text = recognition.get('text', '')
         state['recognition_text'] = res_text
         state['recognition_srt'] = generate_srt(
@@ -138,6 +147,8 @@ class VideoClipper():
         return res_text, res_srt, state
 
     def clip(self, dest_text, start_ost, end_ost, state, dest_spk=None, output_dir=None, timestamp_list=None):
+        if state.get('asr_backend', {}).get('id', DEFAULT_ASR_BACKEND) != DEFAULT_ASR_BACKEND:
+            raise ValueError('Experimental ASR currently supports subtitle generation only; use Paraformer for text based clipping.')
         # get from state
         audio_input = state['audio_input']
         recog_res_raw = state['recog_res_raw']
@@ -247,6 +258,8 @@ class VideoClipper():
                    dest_spk=None, 
                    output_dir=None,
                    timestamp_list=None):
+        if state.get('asr_backend', {}).get('id', DEFAULT_ASR_BACKEND) != DEFAULT_ASR_BACKEND:
+            raise ValueError('Experimental ASR currently supports subtitle generation only; use Paraformer for text based clipping.')
         # get from state
         recog_res_raw = state['recog_res_raw']
         timestamp = state['timestamp']

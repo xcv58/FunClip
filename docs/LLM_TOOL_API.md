@@ -2,6 +2,11 @@
 
 Use this guide to call FunClip features from automation tools (Codex/Claude scripts, CI jobs, etc.) via `gradio_client`.
 
+Optional request-scoped speech model selection is documented in
+[ASR_BACKENDS.md](ASR_BACKENDS.md). Existing endpoints keep Paraformer as their
+default; backend selection uses the additive `transcribe_with_backend` and
+`submit_transcribe_and_correct_with_backend` endpoints.
+
 Target URL:
 - `https://srt.xcv58.xyz/`
 

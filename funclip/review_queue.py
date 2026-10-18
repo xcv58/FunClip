@@ -18,7 +18,7 @@ import zipfile
 
 from funclip.glossary import glossary_report, resolve_glossary
 from funclip.subtitle_meaning import review_facts
-from funclip.utils.subtitle_alignment import aligned_tokens
+from funclip.utils.subtitle_alignment import aligned_tokens, aligned_units, TOKEN
 
 MAX_REVIEW_ITEMS = 200
 MAX_COMPARE_TOKENS = 20_000
@@ -47,6 +47,7 @@ REVIEW_LABELS = {
     'chinese_line_length': 'Check Chinese line length',
     'chinese_line_count': 'Check Chinese text lines',
     'readability_grouping_candidate': 'Review a possible phrase grouping',
+    'atomic_timing_span': 'Check grouped forced alignment timing',
 }
 
 
@@ -116,7 +117,9 @@ def review_details(item):
 
 def recognition_view(payload):
     """Independent native recognition evidence, excluding media and session state."""
-    return copy.deepcopy({k: payload.get(k) for k in ('text', 'raw_text', 'timestamp', 'sentence_info')})
+    return copy.deepcopy({k: payload.get(k) for k in ('text', 'raw_text', 'timestamp', 'sentence_info',
+                                                    'asr_backend', 'backend_native', 'timestamp_adapter')
+                          if k in payload})
 
 
 def _interval(sentence):
@@ -128,6 +131,22 @@ def _interval(sentence):
 
 def _tokens(evidence):
     text = evidence.get('raw_text') or ''
+    if evidence.get('asr_backend', {}).get('timestamp_unit') == 'atomic text span':
+        result, position = [], 0
+        for sentence in evidence.get('sentence_info') or []:
+            source = sentence.get('text', '')
+            if text[position:position + len(source)] != source:
+                return []
+            units = aligned_units(source, sentence.get('timestamp'), sentence.get('timestamp_spans'))
+            if not units and source.strip():
+                return []
+            for unit, (a, b) in zip(units, sentence['timestamp']):
+                # These are enclosing review windows, not estimated token times.
+                # Every member uses its whole measured atomic span.
+                for token in TOKEN.finditer(source, unit.start(), unit.end()):
+                    result.append((token.group(), a, b, position + token.start(), position + token.end()))
+            position += len(source) + 1  # Qwen regions are joined with one space.
+        return result if len(result) <= MAX_COMPARE_TOKENS else []
     times = evidence.get('timestamp')
     tokens = aligned_tokens(text, times)
     if len(tokens) > MAX_COMPARE_TOKENS:
@@ -190,6 +209,11 @@ def build_review_queue(evidence, *, glossary=None, baseline=None, context_checks
     for index, sentence in enumerate(sentences, 1):
         text = sentence.get('text', '')
         start, end = _interval(sentence)
+        if 'timestamp_spans' in sentence:
+            for unit, (a, b) in zip(aligned_units(text, sentence.get('timestamp'), sentence['timestamp_spans']), sentence['timestamp']):
+                if len(TOKEN.findall(unit.group())) > 1:
+                    add('atomic_timing_span', 'Forced alignment grouped these words using measured endpoints; individual character times are unavailable',
+                        a, b, priority='low', ids=[index], original_text=unit.group())
         facts = review_facts(text)
         if any(unit in _MONEY_RATIOS for _, unit in facts['numbers']) or facts['negations']:
             add('fact_check_suggested', 'Check the spoken amount percentage or negation', start, end,

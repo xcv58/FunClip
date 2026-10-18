@@ -133,8 +133,9 @@ class GradioReviewQueueTests(unittest.TestCase):
         self.assertEqual(len(endpoints['/transcribe_with_review']['parameters']), 4)
         self.assertEqual(len(endpoints['/submit_transcribe_and_correct_with_review']['parameters']), 9)
         stage = next(b for b in gradio_app.demo.fns.values() if getattr(b.fn, '__name__', '') == 'stage_process_media_outputs')
-        self.assertIs(stage.inputs[-2], gradio_app.glossary_mode_selector)
-        self.assertIs(stage.inputs[-1], gradio_app.review_context_selector)
+        self.assertIs(stage.inputs[-3], gradio_app.glossary_mode_selector)
+        self.assertIs(stage.inputs[-2], gradio_app.review_context_selector)
+        self.assertIs(stage.inputs[-1], gradio_app.asr_backend_selector)
         self.assertEqual(gradio_app.glossary_mode_selector.value, 'reference')
         self.assertFalse(gradio_app.review_context_selector.value)
 

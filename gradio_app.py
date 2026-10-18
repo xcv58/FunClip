@@ -72,6 +72,7 @@ try:
     from funclip.glossary import resolve_glossary, glossary_choices, glossary_report, validate_glossary_mode
     from funclip.review_queue import build_review_queue, write_review_bundle, save_review_bundle, decide_review_item, REVIEW_LABELS, review_details, review_time
     from funclip.review_queue import create_review_directory, touch_review_artifacts
+    from funclip.asr_backends import ASRBackendError, DEFAULT_ASR_BACKEND, backend_choices, select_backend, validate_backend
 except ImportError as e:
     print(f"Error importing modules: {e}")
     sys.exit(1)
@@ -1706,6 +1707,7 @@ def process_media(
     glossary_id=None,
     glossary_mode=None,
     review_context=False,
+    asr_backend=DEFAULT_ASR_BACKEND,
 ):
     """Process audio/video file and return transcription results."""
     if not chapter_revision_is_current(expected_chapter_revision, request):
@@ -1739,7 +1741,7 @@ def process_media(
     session_state["media_duration_seconds"] = duration_sec
     
     # Initialize Clipper
-    audio_clipper = VideoClipper(funasr_model)
+    audio_clipper = VideoClipper(select_backend(asr_backend, funasr_model))
     audio_clipper.lang = 'zh'
     
     # Process based on file type (reuse is_video from earlier)
@@ -1762,6 +1764,8 @@ def process_media(
             f"Subtitle formatting requires review: {exc}. "
             f"Original ASR evidence retained at {evidence_path}"
         ) from exc
+    except ASRBackendError as exc:
+        raise gr.Error(str(exc)) from exc
     
     # Calculate processing time
     end_time = time.time()
@@ -1774,6 +1778,7 @@ def process_media(
         res_text, res_srt, recognition_state, base_name
     )
     session_state["recognition_evidence"] = evidence
+    session_state['asr_backend'] = evidence.get('asr_backend')
     session_state["recognition_evidence_file_path"] = evidence_path
     quality_report = build_srt_quality_report(
         res_srt, media_duration_seconds=duration_sec if duration_sec > 0 else None
@@ -1801,6 +1806,8 @@ def process_media(
     
     # Format status message
     status_msg = f"✅ Completed in {total_time:.2f}s ({speed_x:.1f}x speed)"
+    if session_state.get('asr_backend'):
+        status_msg += f" ASR {session_state['asr_backend']['id']}"
     status_msg += quality_status_suffix([quality_report])
     status_msg += glossary_status_suffix(session_state.get("glossary_report"))
     status_msg += numeric_span_status_suffix(session_state.get("numeric_span_report"))
@@ -3012,6 +3019,7 @@ def stage_process_media_outputs(
     glossary_id=None,
     glossary_mode=None,
     review_context=False,
+    asr_backend=DEFAULT_ASR_BACKEND,
 ):
     outputs = process_media(
         file_path,
@@ -3020,6 +3028,7 @@ def stage_process_media_outputs(
         request=request,
         **({"glossary_id": glossary_id} if glossary_id is not None else {}),
         **({"glossary_mode": glossary_mode, "review_context": review_context} if glossary_mode is not None else {}),
+        asr_backend=asr_backend,
     )
     return make_revisioned_output_candidate(
         outputs, expected_chapter_revision, request, channel="process"
@@ -3230,17 +3239,20 @@ def stage_edited_chapter_outputs(
         release_staged_chapter_output_slot(reservation_token)
 
 
-def api_transcribe(file_path, glossary_id=None, *, glossary_mode=None, review_context=False):
+def api_transcribe(file_path, glossary_id=None, *, glossary_mode=None, review_context=False, asr_backend=None):
     """API wrapper: transcribe audio/video file and return text + SRT."""
     options = {"glossary_id": glossary_id} if glossary_id is not None else {}
     if glossary_mode is not None:
         options.update(glossary_mode=glossary_mode, review_context=review_context)
+    if asr_backend is not None:
+        options['asr_backend'] = validate_backend(asr_backend)
     formatted_text, srt_content, srt_file_path, status_msg, state = process_media(file_path, {}, **options)
     result = {
         "text_markdown": formatted_text,
         "srt_content": srt_content,
         "srt_file_path": srt_file_path,
         "status": status_msg,
+        "asr_backend": state.get('asr_backend'),
         "recognition_evidence": state.get("recognition_evidence"),
         "recognition_evidence_file_path": state.get("recognition_evidence_file_path"),
         "quality_report": state.get("quality_report"),
@@ -3441,6 +3453,8 @@ def run_async_transcribe_and_correct_job(job_id, payload):
             options = {"glossary_id": payload["glossary_id"]} if payload.get("glossary_id") else {}
             if 'glossary_mode' in payload:
                 options.update(glossary_mode=payload['glossary_mode'], review_context=payload.get('review_context', False))
+            if 'asr_backend' in payload:
+                options['asr_backend'] = payload['asr_backend']
             transcribe_res = api_transcribe(media_path, **options)
             # Keep recognition evidence inspectable even if correction or cleanup fails.
             update_async_job(job_id, transcription=transcribe_res)
@@ -3550,9 +3564,11 @@ def start_async_worker(job_id, target_fn, payload):
 
 
 def api_submit_transcribe_and_correct(file_path, api_key, model_name, custom_model, base_url, return_traditional, glossary_id=None,
-                                     *, glossary_mode=None, review_context=False):
+                                     *, glossary_mode=None, review_context=False, asr_backend=None):
     """Submit async transcribe+correct job and return job id for polling."""
     options = glossary_options(glossary_id)
+    if asr_backend is not None:
+        validate_backend(asr_backend)
     if glossary_mode is not None:
         validate_glossary_mode(glossary_mode)
     if type(review_context) is not bool:
@@ -3573,6 +3589,8 @@ def api_submit_transcribe_and_correct(file_path, api_key, model_name, custom_mod
             payload["glossary_id"] = options["glossary"].id
         if glossary_mode is not None:
             payload.update(glossary_mode=glossary_mode, review_context=review_context)
+        if asr_backend is not None:
+            payload['asr_backend'] = asr_backend
         start_async_worker(job_id, run_async_transcribe_and_correct_job, payload)
     except Exception:
         try:
@@ -3617,6 +3635,18 @@ def api_async_job_status(job_id, include_result):
 
 def api_transcribe_with_glossary(file_path, glossary_id):
     return api_transcribe(file_path, glossary_id=glossary_id)
+
+
+def api_transcribe_with_backend(file_path, asr_backend, glossary_id, glossary_mode, review_context):
+    return api_transcribe(file_path, glossary_id=glossary_id, glossary_mode=glossary_mode,
+                          review_context=review_context, asr_backend=asr_backend)
+
+
+def api_submit_transcribe_and_correct_with_backend(file_path, api_key, model_name, custom_model, base_url,
+                                                 return_traditional, asr_backend, glossary_id, glossary_mode, review_context):
+    return api_submit_transcribe_and_correct(file_path, api_key, model_name, custom_model, base_url,
+        return_traditional, glossary_id=glossary_id, glossary_mode=glossary_mode,
+        review_context=review_context, asr_backend=asr_backend)
 
 
 def api_transcribe_with_review(file_path, glossary_id, glossary_mode, review_context):
@@ -3686,6 +3716,9 @@ with gr.Blocks(
     
     # Model Status
     gr.Markdown("✅ **AI Model Ready**")
+    asr_backend_selector = gr.Dropdown(choices=backend_choices(), value=DEFAULT_ASR_BACKEND,
+        label='Speech recognition model',
+        info='Paraformer is the default Qwen is an optional local experimental backend requiring separate setup')
     
     glossary_selector = gr.Dropdown(
         choices=glossary_choices(), value="none", label="Episode glossary",
@@ -3719,6 +3752,7 @@ with gr.Blocks(
         api_glossary_input = gr.Textbox(value="none")
         api_glossary_mode_input = gr.Textbox(value='reference')
         api_review_context_input = gr.Checkbox(value=False)
+        api_asr_backend_input = gr.Textbox(value=DEFAULT_ASR_BACKEND)
         api_job_id_input = gr.Textbox()
         api_api_key_input = gr.Textbox(type="password")
         api_model_name_input = gr.Textbox(value=DEFAULT_LLM_MODEL)
@@ -3862,6 +3896,14 @@ with gr.Blocks(
     )
     
     with gr.Group(visible=False):
+        gr.Button('transcribe_with_backend').click(fn=api_transcribe_with_backend,
+            inputs=[api_media_input, api_asr_backend_input, api_glossary_input, api_glossary_mode_input, api_review_context_input],
+            outputs=[api_transcribe_output], api_name='transcribe_with_backend')
+        gr.Button('submit_transcribe_and_correct_with_backend').click(fn=api_submit_transcribe_and_correct_with_backend,
+            inputs=[api_media_input, api_api_key_input, api_model_name_input, api_custom_model_input,
+                    api_base_url_input, api_return_traditional_input, api_asr_backend_input, api_glossary_input,
+                    api_glossary_mode_input, api_review_context_input],
+            outputs=[api_submit_transcribe_correct_output], api_name='submit_transcribe_and_correct_with_backend')
         gr.Button('transcribe_with_review').click(fn=api_transcribe_with_review,
             inputs=[api_media_input, api_glossary_input, api_glossary_mode_input, api_review_context_input],
             outputs=[api_transcribe_output], api_name='transcribe_with_review')
@@ -4876,7 +4918,7 @@ with gr.Blocks(
             process_stage_event = process_reset_event.then(
                 fn=stage_process_media_outputs,
                 inputs=[input_file, session_state, chapter_revision_state, glossary_selector,
-                        glossary_mode_selector, review_context_selector],
+                        glossary_mode_selector, review_context_selector, asr_backend_selector],
                 outputs=[process_candidate_state],
                 api_visibility="private",
             )
@@ -5139,6 +5181,7 @@ with gr.Blocks(
                 )
 
             for producer_setting in (
+                asr_backend_selector,
                 glossary_selector,
                 glossary_mode_selector,
                 review_context_selector,
